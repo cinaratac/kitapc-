@@ -1,88 +1,239 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/character.dart';
 import '../models/game_item.dart';
 
-// DİKKAT: Artık "StateNotifier" değil "Notifier" kullanıyoruz.
-// Bu sınıf Riverpod'un en güncel yapısıdır.
-class GameState extends Notifier<List<Character>> {
-  
-  // Constructor yerine build() metodu kullanıyoruz.
-  // Başlangıç verileri burada tanımlanır.
-  @override
-  List<Character> build() {
-    return [
-      Character(id: 'eren', name: 'Eren', imagePath: 'assets/eren.png', title: 'Çırak Barista'),
-      Character(id: 'cinar', name: 'Çınar', imagePath: 'assets/cinar.png', title: 'Depresif Öğrenci'),
-    ];
-  }
+class GameStateData {
+  final List<Character> characters;
+  final List<GameItem> inventory; // AŞAĞIDAKİ KUTUDAKİ EŞYALAR
+  final DateTime gameTime;
+  final bool isShopOpen;
 
-  // Eşya verildiğinde çalışacak fonksiyon
-  void giveItem(String characterId, GameItem item) {
-    // state = [...] diyerek listeyi güncelliyoruz
-    state = [
-      for (final char in state)
-        if (char.id == characterId)
-          _processItem(char, item)
-        else
-          char
-    ];
-  }
+  GameStateData({
+    required this.characters,
+    required this.inventory, // Yeni
+    required this.gameTime,
+    required this.isShopOpen,
+  });
 
-  Character _processItem(Character char, GameItem item) {
-    int newXp = char.currentXp + item.xpValue;
-    double newHappiness = char.happiness;
-    double newSuccess = char.success;
-    double newLove = char.love;
-
-    // Eşya tipine göre etki (Mantığı sen değiştirebilirsin)
-    switch (item.type) {
-      case ItemType.coffee:
-        newHappiness += 0.1; // Kahve mutluluk verir
-        newSuccess += 0.05;  // Biraz da enerji verir
-        break;
-      case ItemType.laptop: // Kod yazmak
-        newSuccess += 0.15;  // Başarı artar
-        newHappiness -= 0.05; // Ama yorar (Mutluluk düşer)
-        break;
-      case ItemType.book:
-        newSuccess += 0.05;
-        newHappiness += 0.05;
-        break;
-      case ItemType.catFood:
-        newLove += 0.2; // Kediyi beslemek aşkı artırır
-        newHappiness += 0.1;
-        break;
-    }
-    newHappiness = newHappiness.clamp(0.0, 1.0);
-    newSuccess = newSuccess.clamp(0.0, 1.0);
-    newLove = newLove.clamp(0.0, 1.0);
-    int newLevel = char.level;
-    int newRequiredXp = char.requiredXp;
-    String newTitle = char.title;
-
-    if (newXp >= char.requiredXp) {
-      newXp = newXp - char.requiredXp;
-      newLevel++;
-      newRequiredXp = (newRequiredXp * 1.5).toInt();
-      
-      if (char.id == 'eren' && newLevel == 5) newTitle = "Usta Barista";
-      if (char.id == 'cinar' && newLevel == 5) newTitle = "Junior Developer";
-    }
-
-    return char.copyWith(
-      currentXp: newXp,
-      level: newLevel,
-      requiredXp: newRequiredXp,
-      title: newTitle,
-      happiness: newHappiness,
-      success: newSuccess,
-      love: newLove,
+  GameStateData copyWith({
+    List<Character>? characters,
+    List<GameItem>? inventory,
+    DateTime? gameTime,
+    bool? isShopOpen,
+  }) {
+    return GameStateData(
+      characters: characters ?? this.characters,
+      inventory: inventory ?? this.inventory,
+      gameTime: gameTime ?? this.gameTime,
+      isShopOpen: isShopOpen ?? this.isShopOpen,
     );
   }
 }
 
-// Sağlayıcı (Provider) tanımı da değişti:
-// StateNotifierProvider -> NotifierProvider oldu.
-final gameProvider = NotifierProvider<GameState, List<Character>>(() {
-  return GameState();
-});
+class GameNotifier extends Notifier<GameStateData> {
+  Timer? _timer;
+  final Random _rng = Random();
+  int _customerCounter = 1;
+
+  @override
+  GameStateData build() {
+    _startTimer();
+    return GameStateData(
+      gameTime: DateTime(2025, 1, 1, 10, 00),
+      isShopOpen: false,
+      inventory: [
+        // Başlangıçta boş veya test için item koyabilirsin
+        GameItem(id: 'pc1', name: 'Laptop', type: ItemType.laptop),
+      ], 
+      characters: [
+        Character(
+          id: 'eren', name: 'Eren', imagePath: 'assets/eren.png', title: 'Barista', 
+          isBarista: true, isPresent: true, location: "Bar", activity: "Hazır",
+        ),
+        Character(
+          id: 'cinar', name: 'Çınar', imagePath: 'assets/cinar.png', title: 'Müdavim', 
+          isPresent: true, location: "Giriş", activity: "Oturuyor",
+        ),
+      ],
+    );
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      _tick();
+    });
+  }
+
+  void _tick() {
+    DateTime newTime = state.gameTime.add(Duration(minutes: 1));
+    bool isOpen = newTime.hour >= 11 && newTime.hour < 23;
+    List<Character> chars = [...state.characters];
+
+    // 1. MÜŞTERİ GELİŞİ (SPAWN)
+    if (isOpen && chars.where((c) => c.id.startsWith('musteri')).length < 4 && _rng.nextInt(100) < 15) {
+      _spawnCustomer(chars);
+    }
+
+    // 2. BARISTA KONTROLÜ (Kahve Pişti mi?)
+    for (int i = 0; i < chars.length; i++) {
+      Character c = chars[i];
+      // Eğer barista kahve yapıyorsa ve süre dolduysa
+      if (c.isBarista && c.activeOrder != null && c.activeOrder!.orderStatus == OrderStatus.preparing) {
+        if (c.orderFinishTime != null && newTime.isAfter(c.orderFinishTime!)) {
+          // KAHVE HAZIR!
+          GameItem finishedDrink = GameItem(
+            id: c.activeOrder!.id,
+            name: "${c.activeOrder!.name} (Hazır)",
+            type: c.activeOrder!.type,
+            relatedCustomerId: c.activeOrder!.relatedCustomerId,
+            orderStatus: OrderStatus.ready, // Durumu değişti
+          );
+          
+          chars[i] = c.copyWith(
+            activeOrder: finishedDrink,
+            activity: "Servis Bekliyor! 🔔",
+            orderFinishTime: null,
+          );
+        }
+      }
+    }
+
+    state = state.copyWith(
+      gameTime: newTime,
+      isShopOpen: isOpen,
+      characters: chars,
+    );
+  }
+
+  void _spawnCustomer(List<Character> list) {
+    // Rastgele İçecek İsteği
+    List<ItemType> drinks = [ItemType.filterCoffee, ItemType.latte, ItemType.espresso, ItemType.herbalTea, ItemType.salep, ItemType.hotChocolate];
+    ItemType wanted = drinks[_rng.nextInt(drinks.length)];
+    String drinkName = _getDrinkName(wanted);
+    String custId = "musteri_${_customerCounter++}";
+
+    // Müşterinin kafasında belirecek sipariş balonu
+    GameItem orderRequest = GameItem(
+      id: "ord_${DateTime.now().millisecondsSinceEpoch}",
+      name: drinkName,
+      type: wanted,
+      relatedCustomerId: custId, // Müşteriye bağladık
+      orderStatus: OrderStatus.pending,
+    );
+
+    list.add(Character(
+      id: custId,
+      name: "Müşteri $_customerCounter",
+      imagePath: 'assets/musteri.png',
+      title: 'Misafir',
+      isPresent: true,
+      location: "Masa",
+      activity: "$drinkName İstiyor",
+      activeOrder: orderRequest, // Sipariş isteğiyle doğdu
+    ));
+  }
+
+  // --- SÜRÜKLE BIRAK MANTIĞI ---
+
+  // 1. Eşyayı Envantere Koy (Aşağıdaki Kutuya)
+  void addToInventory(GameItem item) {
+    // Eğer karakterin üzerindeyse, karakterden silmemiz lazım (bunu UI tarafında handle edeceğiz veya buradan id ile bulup silebiliriz)
+    _removeItemFromCharacters(item.id);
+    
+    state = state.copyWith(inventory: [...state.inventory, item]);
+  }
+
+  // 2. Karakter Eşya/Sipariş Aldı
+  void giveItemToCharacter(String charId, GameItem item) {
+    List<Character> updatedChars = [...state.characters];
+    int idx = updatedChars.indexWhere((c) => c.id == charId);
+    if (idx == -1) return;
+    Character target = updatedChars[idx];
+
+    // SENARYO A: SİPARİŞİ BARİSTAYA VERMEK
+    if (target.isBarista && item.orderStatus == OrderStatus.pending) {
+      // Barista işe başlar
+      DateTime finishTime = state.gameTime.add(Duration(minutes: 5)); // 5 dk süre
+      
+      GameItem preparingItem = GameItem(
+        id: item.id, name: item.name, type: item.type, 
+        relatedCustomerId: item.relatedCustomerId, 
+        orderStatus: OrderStatus.preparing
+      );
+
+      updatedChars[idx] = target.copyWith(
+        activeOrder: preparingItem,
+        activity: "${item.name} Yapıyor...",
+        orderFinishTime: finishTime,
+      );
+      
+      // Envanterden siliyoruz (eğer oradan geldiyse)
+      _removeFromInventory(item.id);
+      // Eğer başka bir karakterden geldiyse onu da temizle
+      _removeItemFromCharacters(item.id); 
+    }
+
+    // SENARYO B: HAZIR KAHVEYİ MÜŞTERİYE VERMEK
+    else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
+      // Müşteri siparişini aldı! MUTLULUK!
+      updatedChars[idx] = target.copyWith(
+        activeOrder: null, // Baloncuk gider
+        activity: "İçiyor 😋",
+        happiness: (target.happiness + 0.3).clamp(0.0, 1.0),
+        currentXp: target.currentXp + 50,
+      );
+      
+      // Baristaya da puan verelim (Eren'i bul)
+      int erenIdx = updatedChars.indexWhere((c) => c.id == 'eren');
+      if (erenIdx != -1) {
+        updatedChars[erenIdx] = updatedChars[erenIdx].copyWith(
+          currentXp: updatedChars[erenIdx].currentXp + 30, // Barista puanı
+          activeOrder: null, // Barista boşa çıkar
+          activity: "Sipariş Bekliyor"
+        );
+      }
+
+      _removeFromInventory(item.id);
+      // (Not: Baristadan direkt sürüklediysek baristanın activeOrder'ı zaten yukarıdaki logic ile temizlenmeli ama garanti olsun diye UI tarafında da bakacağız)
+    }
+    
+    // SENARYO C: LAPTOP/KİTAP VERMEK (Eski mantık)
+    else {
+      // ... eski mantık ...
+    }
+
+    state = state.copyWith(characters: updatedChars);
+  }
+
+  void _removeFromInventory(String itemId) {
+    state = state.copyWith(
+      inventory: state.inventory.where((i) => i.id != itemId).toList()
+    );
+  }
+  
+  void _removeItemFromCharacters(String itemId) {
+    // Tüm karakterleri gez, eğer bu item birinde "activeOrder" ise sil
+    List<Character> chars = state.characters.map((c) {
+      if (c.activeOrder?.id == itemId) {
+        return c.copyWith(clearOrder: true, activity: "Bekliyor"); 
+      }
+      return c;
+    }).toList();
+    state = state.copyWith(characters: chars);
+  }
+
+  String _getDrinkName(ItemType type) {
+    switch (type) {
+      case ItemType.filterCoffee: return "Filtre Kahve";
+      case ItemType.latte: return "Latte";
+      case ItemType.espresso: return "Espresso";
+      case ItemType.herbalTea: return "Bitki Çayı";
+      case ItemType.salep: return "Salep";
+      case ItemType.hotChocolate: return "Sıcak Çikolata";
+      default: return "";
+    }
+  }
+}
+final gameProvider = NotifierProvider<GameNotifier, GameStateData>(() => GameNotifier());

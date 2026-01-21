@@ -1,4 +1,4 @@
-// lib/models/character.dart
+import 'game_item.dart'; 
 class Character {
   final String id;
   final String name;
@@ -7,11 +7,19 @@ class Character {
   final int currentXp;
   final int requiredXp;
   final String title;
+  final bool isBarista; // Bu karakter kahve yapabilir mi?
+  final GameItem? activeOrder; // Şu an ilgilendiği sipariş/baloncuk
+  final DateTime? orderFinishTime;
   
-  // YENİ EKLENENLER:
-  final double happiness; // Mutluluk (0.0 - 1.0 arası)
-  final double success;   // Başarı
-  final double love;      // Aşk
+  // DUYGULAR (Eksik olan 'love' buraya eklendi)
+  final double happiness;
+  final double success;
+  final double love; 
+  
+  // KONUM VE DURUM BİLGİSİ
+  final String location; // Örn: "Büyük Masa", "Bar Arkası"
+  final String activity; // Örn: "Ders Çalışıyor", "Kahve Yapıyor"
+  final bool isPresent;  // Şu an dükkanda mı?
 
   Character({
     required this.id,
@@ -21,9 +29,15 @@ class Character {
     this.currentXp = 0,
     this.requiredXp = 100,
     this.title = "Başlangıç",
-    this.happiness = 0.5, // %50 ile başlasın
+    this.happiness = 0.5,
     this.success = 0.1,
-    this.love = 0.0,
+    this.love = 0.0, // Varsayılan değer
+    this.location = "Dışarıda",
+    this.activity = "Gelmeyi Bekliyor",
+    this.isPresent = false,
+    this.isBarista = false,
+    this.activeOrder,
+    this.orderFinishTime,
   });
 
   Character copyWith({
@@ -34,6 +48,13 @@ class Character {
     double? happiness,
     double? success,
     double? love,
+    String? location,
+    String? activity,
+    bool? isPresent,
+    bool? isBarista,
+    GameItem? activeOrder,
+    DateTime? orderFinishTime,
+    bool? clearOrder,
   }) {
     return Character(
       id: id,
@@ -45,7 +66,14 @@ class Character {
       title: title ?? this.title,
       happiness: happiness ?? this.happiness,
       success: success ?? this.success,
-      love: love ?? this.love,
+      love: love ?? this.love, // Kopyalarken aşkı unutma
+      location: location ?? this.location,
+      activity: activity ?? this.activity,
+      isPresent: isPresent ?? this.isPresent,
+      isBarista: isBarista ?? this.isBarista,
+      activeOrder: (clearOrder == true) ? null : (activeOrder ?? this.activeOrder),
+      orderFinishTime: (clearOrder == true) ? null : (orderFinishTime ?? this.orderFinishTime),
+      // ...
     );
   }
 }
