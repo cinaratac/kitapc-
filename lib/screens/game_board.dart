@@ -12,14 +12,12 @@ class GameBoard extends ConsumerStatefulWidget {
 }
 
 class _GameBoardState extends ConsumerState<GameBoard> {
-  // Sayfa kontrolcüsü (Kaydırma için lazım)
   final PageController _pageController = PageController();
 
-  final List<GameItem> sourceItems = [
-    // İçecekleri buradan SİLDİK. Sadece aktivite eşyaları kaldı.
-    GameItem(id: 'src_laptop', name: "Laptop", type: ItemType.laptop, xpValue: 30),
-    GameItem(id: 'src_book', name: "Kitap", type: ItemType.book, xpValue: 10),
-    // İleride buraya "Sohbet", "Müzik" gibi şeyler ekleyebilirsin.
+  // SABİT MENÜ EŞYALARI (Bunlar asla tükenmez)
+  final List<GameItem> menuItems = [
+    GameItem(id: 'menu_laptop', name: "Laptop", type: ItemType.laptop, xpValue: 30),
+    GameItem(id: 'menu_book', name: "Kitap", type: ItemType.book, xpValue: 10),
   ];
 
   @override
@@ -29,7 +27,6 @@ class _GameBoardState extends ConsumerState<GameBoard> {
     String hour = gameState.gameTime.hour.toString().padLeft(2, '0');
     String minute = gameState.gameTime.minute.toString().padLeft(2, '0');
 
-    // Karakterleri 4'erli gruplara bölüyoruz (Sayfalamak için)
     List<List<Character>> characterPages = [];
     for (int i = 0; i < gameState.characters.length; i += 4) {
       characterPages.add(
@@ -39,7 +36,6 @@ class _GameBoardState extends ConsumerState<GameBoard> {
         )
       );
     }
-    // Eğer hiç karakter yoksa boş bir sayfa olsun hata vermesin
     if (characterPages.isEmpty) characterPages.add([]);
 
     return Scaffold(
@@ -47,7 +43,7 @@ class _GameBoardState extends ConsumerState<GameBoard> {
       body: SafeArea(
         child: Column(
           children: [
-            // --- ÜST PANEL ---
+            // ÜST PANEL
             Container(
               padding: EdgeInsets.all(16),
               color: Colors.white,
@@ -69,25 +65,22 @@ class _GameBoardState extends ConsumerState<GameBoard> {
               ),
             ),
 
-            // --- ORTA ALAN: SAYFALAMA VE SÜRÜKLEME SENSÖRLERİ ---
+            // ORTA ALAN
             Expanded(
               flex: 4,
               child: Stack(
                 children: [
-                  // 1. ANA KARAKTER SAYFALARI (PageView)
                   PageView.builder(
                     controller: _pageController,
                     itemCount: characterPages.length,
                     itemBuilder: (context, pageIndex) {
                       List<Character> pageChars = characterPages[pageIndex];
-                      
-                      // 2x2 IZGARA YAPISI
                       return GridView.builder(
                         padding: EdgeInsets.all(10),
-                        physics: NeverScrollableScrollPhysics(), // Sayfa içinde scroll olmasın
+                        physics: NeverScrollableScrollPhysics(),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2, // Yan yana 2 tane
-                          childAspectRatio: 0.65, // Kartların boy/en oranı (Dikdörtgen olsun)
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.65,
                           crossAxisSpacing: 10,
                           mainAxisSpacing: 10,
                         ),
@@ -98,46 +91,16 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                       );
                     },
                   ),
-
-                  // 2. SOL KENAR SENSÖRÜ (Geri Gitmek İçin)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 40, // Sol tarafta 40px'lik görünmez bir alan
+                  Positioned(left: 0, top: 0, bottom: 0, width: 40,
                     child: DragTarget<GameItem>(
-                      onWillAccept: (data) {
-                        // Üzerine gelince ÖNCEKİ SAYFAYA git
-                        _pageController.previousPage(duration: Duration(milliseconds: 300), curve: Curves.easeInOut);
-                        return false; // Eşyayı yutma, sadece kaydır
-                      },
-                      builder: (context, candidateData, rejectedData) {
-                        return Container(
-                          color: candidateData.isNotEmpty ? Colors.black12 : Colors.transparent, // Test için hafif gri yapabilirsin
-                          child: candidateData.isNotEmpty ? Center(child: Icon(Icons.arrow_back_ios, color: Colors.white)) : null,
-                        );
-                      },
+                      onWillAccept: (_) { _pageController.previousPage(duration: Duration(milliseconds: 300), curve: Curves.easeInOut); return false; },
+                      builder: (c, cand, rej) => Container(color: cand.isNotEmpty ? Colors.black12 : Colors.transparent, child: cand.isNotEmpty ? Icon(Icons.arrow_back_ios, color: Colors.white) : null),
                     ),
                   ),
-
-                  // 3. SAĞ KENAR SENSÖRÜ (İleri Gitmek İçin)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 40, // Sağ tarafta 40px'lik alan
+                  Positioned(right: 0, top: 0, bottom: 0, width: 40,
                     child: DragTarget<GameItem>(
-                      onWillAccept: (data) {
-                        // Üzerine gelince SONRAKİ SAYFAYA git
-                        _pageController.nextPage(duration: Duration(milliseconds: 300), curve: Curves.easeInOut);
-                        return false;
-                      },
-                      builder: (context, candidateData, rejectedData) {
-                         return Container(
-                          color: candidateData.isNotEmpty ? Colors.black12 : Colors.transparent,
-                          child: candidateData.isNotEmpty ? Center(child: Icon(Icons.arrow_forward_ios, color: Colors.white)) : null,
-                        );
-                      },
+                      onWillAccept: (_) { _pageController.nextPage(duration: Duration(milliseconds: 300), curve: Curves.easeInOut); return false; },
+                      builder: (c, cand, rej) => Container(color: cand.isNotEmpty ? Colors.black12 : Colors.transparent, child: cand.isNotEmpty ? Icon(Icons.arrow_forward_ios, color: Colors.white) : null),
                     ),
                   ),
                 ],
@@ -146,42 +109,33 @@ class _GameBoardState extends ConsumerState<GameBoard> {
 
             Divider(height: 1, thickness: 2, color: Colors.brown[200]),
 
-            // --- ALT KUTU (DEPO) ---
+            // --- ALT ALAN (SADECE MENÜ) ---
+            // Burası artık DragTarget DEĞİL. Sadece bir Listedir.
+            // Bu sayede buraya bir şey bırakamazsın (Kopyalama bug'ı imkansız hale gelir).
             Expanded(
               flex: 1,
-              child: DragTarget<GameItem>(
-                onAccept: (item) {
-                  ref.read(gameProvider.notifier).addToInventory(item);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Depoya kaldırıldı!"), duration: Duration(milliseconds: 500)));
-                },
-                builder: (context, candidateData, rejectedData) {
-                  return Container(
-                    color: candidateData.isNotEmpty ? Colors.orange[100] : Colors.brown[100],
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(5.0),
-                          child: Text("Menü & Depo (Eşyaları buraya bırakabilirsin)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown)),
-                        ),
-                        Expanded(
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            padding: EdgeInsets.all(10),
-                            itemCount: sourceItems.length + gameState.inventory.length,
-                            itemBuilder: (context, index) {
-                              if (index < sourceItems.length) {
-                                return ItemCard(item: sourceItems[index]);
-                              } else {
-                                return ItemCard(item: gameState.inventory[index - sourceItems.length]);
-                              }
-                            },
-                          ),
-                        ),
-                      ],
+              child: Container(
+                color: Colors.brown[100],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(5.0),
+                      child: Text("Eylemler (Sınırsız Kullanım)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown)),
                     ),
-                  );
-                },
+                    Expanded(
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.all(10),
+                        itemCount: menuItems.length,
+                        itemBuilder: (context, index) {
+                          // Bu kartlar sürüklenebilir ama menüden eksilmez
+                          return ItemCard(item: menuItems[index]);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
