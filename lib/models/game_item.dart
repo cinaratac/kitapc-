@@ -1,20 +1,22 @@
 enum ItemType { 
-  // İçecekler
-  filterCoffee, latte, espresso, herbalTea, salep, hotChocolate, 
-  // Diğer Eşyalar
-  laptop, book, generic 
+  filterCoffee, latte, espresso, herbalTea, 
+  laptop, book 
 }
 
-// Bir siparişin durumu
-enum OrderStatus { pending, preparing, ready }
+enum OrderStatus { 
+  pending,    // Sarı (İstiyor)
+  processing, // Mavi (Sipariş verildi, bekliyor)
+  preparing,  // Gri (Barista hazırlıyor)
+  ready       // Yeşil (Hazır)
+}
 
 class GameItem {
   final String id;
   final String name;
   final ItemType type;
   final int xpValue;
-  final String? relatedCustomerId; // Bu eşya kime ait? (Sipariş için)
-  final OrderStatus? orderStatus;  // Siparişin durumu ne?
+  final String? relatedCustomerId;
+  final OrderStatus? orderStatus;
 
   GameItem({
     required this.id,
@@ -25,15 +27,12 @@ class GameItem {
     this.orderStatus,
   });
 
-  // İkon seçici (Resimlerin yoksa ikon kullanırız)
   String get iconAsset {
     switch (type) {
       case ItemType.filterCoffee: return "☕";
       case ItemType.latte: return "🥛";
       case ItemType.espresso: return "🧉";
       case ItemType.herbalTea: return "🍵";
-      case ItemType.salep: return "🥛";
-      case ItemType.hotChocolate: return "🍫";
       case ItemType.laptop: return "💻";
       case ItemType.book: return "📖";
       default: return "📦";
