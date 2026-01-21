@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/character.dart';
 import '../models/game_item.dart';
 
-// STATE (Artık Inventory yok, kafa karıştırmasın)
+// OYUN DURUMU (STATE)
 class GameStateData {
   final List<Character> characters;
   final DateTime gameTime;
@@ -49,13 +49,13 @@ class GameNotifier extends Notifier<GameStateData> {
 
   void _startTimer() {
     // 1 Saniye = 1 Oyun Dakikası
-    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _tick();
     });
   }
 
   void _tick() {
-    DateTime newTime = state.gameTime.add(Duration(minutes: 1));
+    DateTime newTime = state.gameTime.add(const Duration(minutes: 15));
     bool isOpen = newTime.hour >= 11 && newTime.hour < 23;
     List<Character> chars = [...state.characters];
 
@@ -82,13 +82,12 @@ class GameNotifier extends Notifier<GameStateData> {
         chars[cinarIdx] = chars[cinarIdx].copyWith(isPresent: true, location: "Giriş", activity: "Selam Veriyor 👋");
     }
 
-    // --- SÜRELİ İŞLEMLERİN KONTROLÜ ---
+    // --- SÜRELİ İŞLEMLERİN KONTROLÜ (ÇİFT KANAL) ---
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
       
+      // 1. KANAL: SİPARİŞ KONTROLÜ (Kahve Hazırlama)
       if (c.orderFinishTime != null && newTime.isAfter(c.orderFinishTime!)) {
-        
-        // 1. BARİSTA KAHVE YAPIYORSA
         if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
           GameItem finished = GameItem(
             id: c.activeOrder!.id, name: c.activeOrder!.name, type: c.activeOrder!.type,
@@ -97,28 +96,24 @@ class GameNotifier extends Notifier<GameStateData> {
           );
           chars[i] = c.copyWith(activeOrder: finished, activity: "Servis Hazır! 🔔", orderFinishTime: null);
         }
-        
-        // 2. KİTAP OKUMA BİTTİYSE
-        else if (c.activity.contains("Kitap Okuyor")) {
-           chars[i] = c.copyWith(
-             activity: "Kitabı Bitirdi 🧠",
-             happiness: (c.happiness + 0.2).clamp(0.0, 1.0),
-             currentXp: c.currentXp + 30,
-             orderFinishTime: null,
-             clearOrder: true, 
-           );
-        }
+      }
 
-        // 3. KOD YAZMA BİTTİYSE
-        else if (c.activity.contains("Kod Yazıyor")) {
-           chars[i] = c.copyWith(
-             activity: "Projeyi Tamamladı 💻",
-             currentXp: c.currentXp + 60,
-             success: (c.success + 0.1).clamp(0.0, 1.0),
-             happiness: (c.happiness - 0.1).clamp(0.0, 1.0),
-             orderFinishTime: null,
-             clearOrder: true,
-           );
+      // 2. KANAL: AKTİVİTE KONTROLÜ (Kitap/Laptop)
+      if (c.activityFinishTime != null && newTime.isAfter(c.activityFinishTime!)) {
+        if (c.activeActivity?.type == ItemType.book) {
+          chars[i] = c.copyWith(
+            activity: "Kitabı Bitirdi 🧠",
+            happiness: (c.happiness + 0.2).clamp(0.0, 1.0),
+            currentXp: c.currentXp + 30,
+            clearActivity: true, // Aktivite kanalını temizle
+          );
+        } else if (c.activeActivity?.type == ItemType.laptop) {
+          chars[i] = c.copyWith(
+            activity: "Projeyi Tamamladı 💻",
+            currentXp: c.currentXp + 60,
+            success: (c.success + 0.1).clamp(0.0, 1.0),
+            clearActivity: true, // Aktivite kanalını temizle
+          );
         }
       }
     }
@@ -143,56 +138,69 @@ class GameNotifier extends Notifier<GameStateData> {
   }
 
 
-  // --- EŞYA VERME / SİPARİŞ ---
+  // --- EŞYA VERME / ETKİLEŞİM MANTIĞI ---
   void giveItemToCharacter(String charId, GameItem item) {
     List<Character> updatedChars = [...state.characters];
     int idx = updatedChars.indexWhere((c) => c.id == charId);
     if (idx == -1) return;
     Character target = updatedChars[idx];
 
-    // 1. Barista Siparişi (Müşterinin Balonunu Baristaya Verdik)
-    if (target.isBarista && item.orderStatus == OrderStatus.pending) {
-        if (target.activeOrder != null) return; 
+    // --- BÖLÜM 1: SİPARİŞ MANTIĞI (İçecekler) ---
+    if (item.type != ItemType.laptop && item.type != ItemType.book) {
+      
+      // Baristaya Sipariş Verme (Sarı Balon Transferi)
+      if (target.isBarista && item.orderStatus == OrderStatus.pending) {
+          if (target.activeOrder != null) return; // Zaten kahve yapıyorsa alamaz
 
-        DateTime finishTime = state.gameTime.add(Duration(minutes: 15));
+          DateTime finishTime = state.gameTime.add(const Duration(minutes: 15));
+          GameItem preparing = GameItem(
+            id: item.id, name: item.name, type: item.type,
+            relatedCustomerId: item.relatedCustomerId, orderStatus: OrderStatus.preparing, 
+          );
+          updatedChars[idx] = target.copyWith(activeOrder: preparing, activity: "${item.name} Yapıyor...", orderFinishTime: finishTime, currentXp: target.currentXp + 10);
+          
+          // Müşteri tarafındaki balonu "İşleniyor (Mavi)" yap
+          int cIdx = updatedChars.indexWhere((c) => c.id == item.relatedCustomerId);
+          if (cIdx != -1) {
+            updatedChars[cIdx] = updatedChars[cIdx].copyWith(
+              activeOrder: GameItem(id: item.id, name: item.name, type: item.type, relatedCustomerId: item.relatedCustomerId, orderStatus: OrderStatus.processing),
+              activity: "Bekliyor...",
+            );
+          }
+      }
+      // Müşteriye Teslimat (Yeşil Balon Transferi)
+      else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
+        updatedChars[idx] = target.copyWith(clearOrder: true, activity: "Keyif Yapıyor ☕", currentXp: target.currentXp + 50, happiness: (target.happiness + 0.3).clamp(0.0, 1.0));
         
-        GameItem preparing = GameItem(
-          id: item.id, name: item.name, type: item.type,
-          relatedCustomerId: item.relatedCustomerId, orderStatus: OrderStatus.preparing, 
+        // Baristayı temizle
+        int bIdx = updatedChars.indexWhere((c) => c.isBarista && c.activeOrder?.id == item.id);
+        if (bIdx != -1) {
+          updatedChars[bIdx] = updatedChars[bIdx].copyWith(clearOrder: true, activity: "Sipariş Bekliyor", currentXp: updatedChars[bIdx].currentXp + 40);
+        }
+      }
+    } 
+    
+    // --- BÖLÜM 2: AKTİVİTE MANTIĞI (Laptop / Kitap) ---
+    else {
+      // Eğer karakter zaten bir aktivite yapıyorsa yenisine başlayamaz
+      if (target.activeActivity != null) return;
+
+      if (item.type == ItemType.laptop) {
+        DateTime finishTime = state.gameTime.add(const Duration(minutes: 120)); // 2 Saat
+        updatedChars[idx] = target.copyWith(
+          activity: "Kod Yazıyor...", 
+          activityFinishTime: finishTime,
+          activeActivity: GameItem(id: "act_${_rng.nextInt(99999)}", name: "Kod", type: ItemType.laptop, orderStatus: OrderStatus.processing)
         );
-        updatedChars[idx] = target.copyWith(activeOrder: preparing, activity: "${item.name} Yapıyor...", orderFinishTime: finishTime, currentXp: target.currentXp + 10);
-        
-        // Müşterideki balonu MAVİ yap
-        int cIdx = updatedChars.indexWhere((c) => c.id == item.relatedCustomerId);
-        if (cIdx != -1) updatedChars[cIdx] = updatedChars[cIdx].copyWith(activeOrder: GameItem(id: item.id, name: item.name, type: item.type, relatedCustomerId: item.relatedCustomerId, orderStatus: OrderStatus.processing), activity: "Bekliyor...");
-    }
-    
-    // 2. Müşteri Teslimatı (Baristadaki Yeşil Balonu Müşteriye Verdik)
-    else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
-      updatedChars[idx] = target.copyWith(clearOrder: true, activity: "Keyif Yapıyor ☕", currentXp: target.currentXp + 50, happiness: (target.happiness + 0.3).clamp(0.0, 1.0));
-      int bIdx = updatedChars.indexWhere((c) => c.isBarista && c.activeOrder?.id == item.id);
-      if (bIdx != -1) updatedChars[bIdx] = updatedChars[bIdx].copyWith(clearOrder: true, activity: "Sipariş Bekliyor", currentXp: updatedChars[bIdx].currentXp + 40);
-    }
-    
-    // 3. EŞYA MENÜSÜNDEN GELEN AKTİVİTELER (Laptop / Kitap)
-    // Sınırsızdır, envanterden silme veya ekleme yapmayız. Sadece aktiviteyi başlatırız.
-    else if (item.type == ItemType.laptop) {
-       DateTime finishTime = state.gameTime.add(Duration(minutes: 120)); // 2 Saat
-       updatedChars[idx] = target.copyWith(
-         activity: "Kod Yazıyor... (2s)", 
-         orderFinishTime: finishTime,
-         // Kafasında ikon çıksın diye rastgele bir ID ile balon oluşturuyoruz
-         activeOrder: GameItem(id: "act_${_rng.nextInt(99999)}", name: "Kod", type: ItemType.laptop, orderStatus: OrderStatus.processing) 
-       );
-    }
-
-    else if (item.type == ItemType.book) {
-       DateTime finishTime = state.gameTime.add(Duration(minutes: 60)); // 1 Saat
-       updatedChars[idx] = target.copyWith(
-         activity: "Kitap Okuyor... (1s)", 
-         orderFinishTime: finishTime,
-         activeOrder: GameItem(id: "act_${_rng.nextInt(99999)}", name: "Kitap", type: ItemType.book, orderStatus: OrderStatus.processing)
-       );
+      } 
+      else if (item.type == ItemType.book) {
+        DateTime finishTime = state.gameTime.add(const Duration(minutes: 60)); // 1 Saat
+        updatedChars[idx] = target.copyWith(
+          activity: "Kitap Okuyor...", 
+          activityFinishTime: finishTime,
+          activeActivity: GameItem(id: "act_${_rng.nextInt(99999)}", name: "Kitap", type: ItemType.book, orderStatus: OrderStatus.processing)
+        );
+      }
     }
 
     state = state.copyWith(characters: updatedChars);
