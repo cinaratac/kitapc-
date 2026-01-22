@@ -65,16 +65,23 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                       return GridView.builder(
                         padding: const EdgeInsets.all(10),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2, childAspectRatio: 0.65, crossAxisSpacing: 10, mainAxisSpacing: 10,
+                          crossAxisCount: 2, 
+                          childAspectRatio: 0.65, 
+                          crossAxisSpacing: 10, 
+                          mainAxisSpacing: 10,
                         ),
                         itemCount: characterPages[pageIndex].length,
                         itemBuilder: (context, index) => CharacterCard(character: characterPages[pageIndex][index]),
                       );
                     },
                   ),
-                  // Sol Kenar: Sürükleme sırasında önceki sayfaya geçiş
+                  
+                  // SOL KENAR: Sürükleme şeridi (Sipariş balonlarını engellememesi için daraltıldı ve ortalandı)
                   Positioned(
-                    left: 0, top: 0, bottom: 0, width: 40,
+                    left: 0, 
+                    top: 100,    // Üstteki baloncukları serbest bırakır
+                    bottom: 120, // Menü alanını serbest bırakır
+                    width: 25,   // Hassas sürükleme alanı
                     child: DragTarget<GameItem>(
                       onWillAccept: (data) {
                         if (_pageController.page! > 0) {
@@ -85,9 +92,13 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                       builder: (context, _, __) => Container(color: Colors.transparent),
                     ),
                   ),
-                  // Sağ Kenar: Sürükleme sırasında sonraki sayfaya geçiş
+
+                  // SAĞ KENAR: Sürükleme şeridi (Sipariş balonlarını engellememesi için daraltıldı ve ortalandı)
                   Positioned(
-                    right: 0, top: 0, bottom: 0, width: 40,
+                    right: 0, 
+                    top: 100,    // Sağ üstteki sipariş balonlarını kurtarır
+                    bottom: 120, 
+                    width: 25,   
                     child: DragTarget<GameItem>(
                       onWillAccept: (data) {
                         if (_pageController.page! < characterPages.length - 1) {

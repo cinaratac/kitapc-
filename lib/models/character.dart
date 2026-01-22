@@ -25,7 +25,7 @@ class Character {
   final double love; 
   
   final String location;
-  final String activity;
+  final String activity; // Ham aktivite metni
   final bool isPresent;
 
   Character({
@@ -51,6 +51,12 @@ class Character {
     this.arrivalTime,
     this.departureTime,
   });
+
+  // Dinamik Durum Metni Çözümü
+  String get currentStatusText {
+    if (activeOrder != null && activeActivity != null) return "Hem Çalışıyor Hem İçiyor ☕💻";
+    return activity;
+  }
 
   Character copyWith({
     int? level, int? currentXp, double? happiness, double? success,
