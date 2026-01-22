@@ -22,7 +22,6 @@ class _GameBoardState extends ConsumerState<GameBoard> {
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameProvider);
     
-    // KRİTİK FİLTRE: Sadece dükkanda olanları göster
     final presentCharacters = gameState.characters.where((c) => c.isPresent).toList();
 
     List<List<Character>> characterPages = [];
@@ -57,19 +56,49 @@ class _GameBoardState extends ConsumerState<GameBoard> {
             ),
             Expanded(
               flex: 4,
-              child: PageView.builder(
-                controller: _pageController,
-                itemCount: characterPages.length,
-                itemBuilder: (context, pageIndex) {
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(10),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2, childAspectRatio: 0.65, crossAxisSpacing: 10, mainAxisSpacing: 10,
+              child: Stack(
+                children: [
+                  PageView.builder(
+                    controller: _pageController,
+                    itemCount: characterPages.length,
+                    itemBuilder: (context, pageIndex) {
+                      return GridView.builder(
+                        padding: const EdgeInsets.all(10),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2, childAspectRatio: 0.65, crossAxisSpacing: 10, mainAxisSpacing: 10,
+                        ),
+                        itemCount: characterPages[pageIndex].length,
+                        itemBuilder: (context, index) => CharacterCard(character: characterPages[pageIndex][index]),
+                      );
+                    },
+                  ),
+                  // Sol Kenar: Sürükleme sırasında önceki sayfaya geçiş
+                  Positioned(
+                    left: 0, top: 0, bottom: 0, width: 40,
+                    child: DragTarget<GameItem>(
+                      onWillAccept: (data) {
+                        if (_pageController.page! > 0) {
+                          _pageController.previousPage(duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+                        }
+                        return false; 
+                      },
+                      builder: (context, _, __) => Container(color: Colors.transparent),
                     ),
-                    itemCount: characterPages[pageIndex].length,
-                    itemBuilder: (context, index) => CharacterCard(character: characterPages[pageIndex][index]),
-                  );
-                },
+                  ),
+                  // Sağ Kenar: Sürükleme sırasında sonraki sayfaya geçiş
+                  Positioned(
+                    right: 0, top: 0, bottom: 0, width: 40,
+                    child: DragTarget<GameItem>(
+                      onWillAccept: (data) {
+                        if (_pageController.page! < characterPages.length - 1) {
+                          _pageController.nextPage(duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+                        }
+                        return false;
+                      },
+                      builder: (context, _, __) => Container(color: Colors.transparent),
+                    ),
+                  ),
+                ],
               ),
             ),
             Container(

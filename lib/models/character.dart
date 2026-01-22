@@ -10,9 +10,15 @@ class Character {
   final int requiredXp;
   final String title;
   final bool isBarista;
-  final GameItem? activeOrder;
+  
+  final GameItem? activeOrder; // Kahve/Çay siparişleri için
   final DateTime? orderFinishTime;
-  final DateTime? departureTime; // Yeni: Dükkandan ayrılma vakti
+  
+  final GameItem? activeActivity; // Laptop/Kitap aktiviteleri için
+  final DateTime? activityFinishTime;
+  
+  final DateTime? arrivalTime; // Gecikme uyarısı için
+  final DateTime? departureTime; 
   
   final double happiness;
   final double success;
@@ -40,14 +46,19 @@ class Character {
     this.isBarista = false,
     this.activeOrder,
     this.orderFinishTime,
+    this.activeActivity,
+    this.activityFinishTime,
+    this.arrivalTime,
     this.departureTime,
   });
 
   Character copyWith({
     int? level, int? currentXp, double? happiness, double? success,
     double? love, String? location, String? activity, bool? isPresent,
-    GameItem? activeOrder, DateTime? orderFinishTime, DateTime? departureTime,
-    bool? clearOrder,
+    GameItem? activeOrder, DateTime? orderFinishTime,
+    GameItem? activeActivity, DateTime? activityFinishTime,
+    DateTime? arrivalTime, DateTime? departureTime,
+    bool? clearOrder, bool? clearActivity,
   }) {
     return Character(
       id: id, name: name, description: description, imagePath: imagePath,
@@ -62,6 +73,9 @@ class Character {
       isPresent: isPresent ?? this.isPresent,
       activeOrder: (clearOrder == true) ? null : (activeOrder ?? this.activeOrder),
       orderFinishTime: (clearOrder == true) ? null : (orderFinishTime ?? this.orderFinishTime),
+      activeActivity: (clearActivity == true) ? null : (activeActivity ?? this.activeActivity),
+      activityFinishTime: (clearActivity == true) ? null : (activityFinishTime ?? this.activityFinishTime),
+      arrivalTime: arrivalTime ?? this.arrivalTime,
       departureTime: departureTime ?? this.departureTime,
     );
   }
