@@ -20,8 +20,8 @@ class CharacterPreset {
 final List<CharacterPreset> allPresets = [
   CharacterPreset(
     name: "Çınar",
-    description: "Depresif ama dahi bir yazılımcı. Kahve ve kod arasında yaşıyor.",
-    title: "Müdavim",
+    description: "Duygular göstermek için varlar. Asla hiç bir şeyi saklamam",
+    title: "Klasik Çınar",
     activityTexts: {
       ItemType.laptop: "Karanlık temada kod yazıyor... 💻",
       ItemType.book: "Felsefe kitabı okuyup uzaklara dalıyor... 📖",
@@ -33,8 +33,8 @@ final List<CharacterPreset> allPresets = [
   ),
   CharacterPreset(
     name: "Eren",
-    description: "Gamer bir barista. Kahve yaparken bile aklı Openfront oyununda.",
-    title: "Barista",
+    description: "Üzgün olmadığıma dair kendimi kandırmıyorum. Sadece şımarık değilim",
+    title: "Müzisyen Barista",
     activityTexts: {
       ItemType.laptop: "Gizlice Openfront oynuyor! 🎮",
       ItemType.book: "Kahve ansiklopedisi karıştırıyor. ☕",
@@ -46,8 +46,8 @@ final List<CharacterPreset> allPresets = [
   ),
   CharacterPreset(
     name: "Dilay",
-    description: "Kitap kurdu. Romantik bir edebiyatçı.",
-    title: "Yazar",
+    description: "Gülüyorum ama galiba biraz yalnız hissediyorum",
+    title: "Ressam",
     activityTexts: {
       ItemType.laptop: "Blog yazısı hazırlıyor... ✍️",
       ItemType.book: "Aşk romanına gömülmüş durumda... 💖",

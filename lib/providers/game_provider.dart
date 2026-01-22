@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/character.dart';
 import '../models/game_item.dart';
+import '../data/character_presets.dart'; // Presetleri ekledik
 
 class GameStateData {
   final List<Character> characters;
@@ -36,16 +37,21 @@ class GameNotifier extends Notifier<GameStateData> {
   @override
   GameStateData build() {
     _startTimer();
+
+    // Preset listesinden ana karakterleri buluyoruz
+    final erenPreset = allPresets.firstWhere((p) => p.name == "Eren");
+    final cinarPreset = allPresets.firstWhere((p) => p.name == "Çınar");
+
     return GameStateData(
       gameTime: DateTime(2025, 1, 1, 9, 30),
       isShopOpen: false,
       characters: [
         Character(
           id: 'eren',
-          name: 'Eren',
-          description: 'Dükkanın ruhu, gamer barista.',
+          name: erenPreset.name,
+          description: erenPreset.description,
           imagePath: 'assets/eren.png',
-          title: 'Barista',
+          title: erenPreset.title,
           isBarista: true,
           isPresent: false,
           location: "Ev",
@@ -53,10 +59,10 @@ class GameNotifier extends Notifier<GameStateData> {
         ),
         Character(
           id: 'cinar',
-          name: 'Çınar',
-          description: 'Depresif ama dahi bir yazılımcı.',
+          name: cinarPreset.name,
+          description: cinarPreset.description,
           imagePath: 'assets/cinar.png',
-          title: 'Müdavim',
+          title: cinarPreset.title,
           isPresent: false,
           location: "Ev",
           activity: "Uyuyor",
@@ -98,7 +104,7 @@ class GameNotifier extends Notifier<GameStateData> {
       }
     }
 
-    // --- MÜŞTERİ SİRKÜLASYONU ---
+    // --- MÜŞTERİ SİRKÜLASYONU VE SİPARİŞ ZEKSASI ---
     if (isOpen) {
       int currentCustomers = chars.where((c) => c.id.startsWith('musteri')).length;
       if (currentCustomers < 5 && _rng.nextInt(100) < 5) {
@@ -115,13 +121,31 @@ class GameNotifier extends Notifier<GameStateData> {
           departureTime: depart,
         );
       }
+
+      int activeOrdersCount = chars.where((c) {
+        if (c.activeOrder == null) return false;
+        return c.activeOrder!.orderStatus == OrderStatus.pending || 
+               c.activeOrder!.orderStatus == OrderStatus.processing;
+      }).length;
+
+      if (activeOrdersCount < 3) {
+        List<int> potentialOrderers = [];
+        for (int i = 0; i < chars.length; i++) {
+          if (chars[i].isPresent && !chars[i].isBarista && chars[i].activeOrder == null) {
+            potentialOrderers.add(i);
+          }
+        }
+
+        if (potentialOrderers.isNotEmpty && _rng.nextInt(100) < 10) {
+          int luckyIdx = potentialOrderers[_rng.nextInt(potentialOrderers.length)];
+          chars[luckyIdx] = _generateOrderForCharacter(chars[luckyIdx], newTime);
+        }
+      }
     }
 
     // --- AYRILMA VE GÖREV KONTROLLERİ ---
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
-
-      // Müşterinin ayrılması için hem sipariş hem aktivite yuvası boş olmalı
       if (c.isPresent && !c.isBarista && c.departureTime != null && 
           newTime.isAfter(c.departureTime!) && c.activeOrder == null && c.activeActivity == null) {
         if (c.id.startsWith('musteri')) {
@@ -139,7 +163,7 @@ class GameNotifier extends Notifier<GameStateData> {
         }
       }
 
-      // Sipariş Hazırlanma Tamamlanması (Barista için)
+      // Sipariş/Aktivite bitiş kontrolleri... (Önceki kodla aynı)
       if (c.orderFinishTime != null && newTime.isAfter(c.orderFinishTime!)) {
         if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
           chars[i] = c.copyWith(
@@ -150,38 +174,21 @@ class GameNotifier extends Notifier<GameStateData> {
         }
       }
 
-      // Aktivite Tamamlanması (Kitap/Laptop)
       if (c.activityFinishTime != null && newTime.isAfter(c.activityFinishTime!)) {
-        if (c.activeActivity?.type == ItemType.book) {
+        // Preset üzerinden çarpanları uygulama
+        final preset = allPresets.firstWhere((p) => p.name == c.name, orElse: () => allPresets[0]);
+        final type = c.activeActivity?.type;
+        
+        if (type != null && preset.multipliers.containsKey(type)) {
+          final m = preset.multipliers[type]!;
           chars[i] = c.copyWith(
-            activity: "Kitabı Bitirdi 🧠",
-            happiness: (c.happiness + 0.2).clamp(0.0, 1.0),
-            currentXp: c.currentXp + 30,
-            clearActivity: true,
-          );
-        } else if (c.activeActivity?.type == ItemType.laptop) {
-          double successIncr = c.id == 'cinar' ? 0.2 : 0.1;
-          chars[i] = c.copyWith(
-            activity: "Projeyi Tamamladı 💻",
-            currentXp: c.currentXp + 60,
-            success: (c.success + successIncr).clamp(0.0, 1.0),
+            activity: "${c.activeActivity?.name} bitti",
+            happiness: (c.happiness + (m['happiness'] ?? 0)).clamp(0.0, 1.0),
+            success: (c.success + (m['success'] ?? 0)).clamp(0.0, 1.0),
+            currentXp: c.currentXp + (m['xp']?.toInt() ?? 20),
             clearActivity: true,
           );
         }
-      }
-    }
-
-    // --- KAPANIŞ ---
-    if (newTime.hour == 23 && newTime.minute == 0) {
-      chars.removeWhere((c) => c.id.startsWith('musteri'));
-      for (int i = 0; i < chars.length; i++) {
-        chars[i] = chars[i].copyWith(
-          isPresent: false,
-          location: "Ev",
-          activity: "Dinleniyor",
-          clearOrder: true,
-          clearActivity: true,
-        );
       }
     }
 
@@ -189,35 +196,46 @@ class GameNotifier extends Notifier<GameStateData> {
   }
 
   void _spawnCustomer(List<Character> list, DateTime currentTime) {
-    List<ItemType> drinks = [ItemType.filterCoffee, ItemType.latte, ItemType.espresso, ItemType.herbalTea];
-    ItemType wanted = drinks[_rng.nextInt(drinks.length)];
+    // Eren ve Çınar dışındaki presetlerden rastgele seçiyoruz
+    final availablePresets = allPresets.where((p) => p.name != "Eren" && p.name != "Çınar").toList();
+    final randomPreset = availablePresets[_rng.nextInt(availablePresets.length)];
+    
     String custId = "musteri_$_customerCounter";
     _customerCounter++;
 
-    int stayDuration = 15 + _rng.nextInt(285);
+    int stayDuration = 60 + _rng.nextInt(180);
     DateTime departAt = currentTime.add(Duration(minutes: stayDuration));
 
+    list.add(Character(
+      id: custId,
+      name: randomPreset.name,
+      description: randomPreset.description,
+      imagePath: 'assets/cinar.png', // Tüm müşteriler şimdilik aynı görseli kullanabilir
+      title: randomPreset.title,
+      isPresent: true,
+      location: "Masa",
+      activity: "Dükkana girdi...",
+      departureTime: departAt,
+    ));
+  }
+
+  Character _generateOrderForCharacter(Character c, DateTime currentTime) {
+    List<ItemType> drinks = [ItemType.filterCoffee, ItemType.latte, ItemType.espresso, ItemType.herbalTea];
+    ItemType wanted = drinks[_rng.nextInt(drinks.length)];
+    
     GameItem order = GameItem(
       id: "ord_${currentTime.millisecondsSinceEpoch}",
       name: wanted.name,
       type: wanted,
-      relatedCustomerId: custId,
+      relatedCustomerId: c.id,
       orderStatus: OrderStatus.pending,
     );
 
-    list.add(Character(
-      id: custId,
-      name: "Müşteri ${_customerCounter - 1}",
-      description: "Kahve içmeye gelmiş bir misafir.",
-      imagePath: 'assets/cinar.png',
-      title: 'Misafir',
-      isPresent: true,
-      location: "Masa",
-      activity: "Sipariş Bekliyor",
+    return c.copyWith(
       activeOrder: order,
-      arrivalTime: currentTime, // Gecikme uyarısı için giriş saati
-      departureTime: departAt,
-    ));
+      activity: "Canı ${order.name} çekti...",
+      arrivalTime: currentTime,
+    );
   }
 
   void giveItemToCharacter(String charId, GameItem item) {
@@ -226,52 +244,15 @@ class GameNotifier extends Notifier<GameStateData> {
     if (idx == -1) return;
     Character target = updatedChars[idx];
 
-    // EŞYA TÜRÜNE GÖRE MANTIK (Sipariş vs Aktivite)
-    if (item.type != ItemType.laptop && item.type != ItemType.book) {
-      // Barista Sipariş Alımı
-      if (target.isBarista && item.orderStatus == OrderStatus.pending) {
-        if (target.activeOrder != null) return;
-        updatedChars[idx] = target.copyWith(
-          activeOrder: item.copyWith(orderStatus: OrderStatus.preparing),
-          activity: "${item.name} Yapıyor...",
-          orderFinishTime: state.gameTime.add(const Duration(minutes: 15)),
-          currentXp: target.currentXp + 10,
-        );
-        int cIdx = updatedChars.indexWhere((c) => c.id == item.relatedCustomerId);
-        if (cIdx != -1) {
-          updatedChars[cIdx] = updatedChars[cIdx].copyWith(
-            activeOrder: item.copyWith(orderStatus: OrderStatus.processing),
-            activity: "Bekliyor...",
-          );
-        }
-      }
-      // Müşteriye Teslimat
-      else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
-        updatedChars[idx] = target.copyWith(
-          clearOrder: true,
-          activity: "Keyif Yapıyor ☕",
-          currentXp: target.currentXp + 50,
-          happiness: (target.happiness + 0.3).clamp(0.0, 1.0),
-          // Kahve tesliminden sonra kalış süresini uzat
-          departureTime: state.gameTime.add(const Duration(minutes: 30)),
-        );
-        int bIdx = updatedChars.indexWhere((c) => c.isBarista && c.activeOrder?.id == item.id);
-        if (bIdx != -1) {
-          updatedChars[bIdx] = updatedChars[bIdx].copyWith(
-            clearOrder: true,
-            activity: "Sipariş Bekliyor",
-          );
-        }
-      }
-    } 
-    // AKTİVİTE BAŞLATMA (Laptop / Kitap)
-    else if (item.type == ItemType.laptop || item.type == ItemType.book) {
-      if (target.activeActivity != null) return; // Zaten bir aktivite yapıyorsa ikincisini alamaz
+    // Karakterin presetini bul (Özel diyaloglar için)
+    final preset = allPresets.firstWhere((p) => p.name == target.name, orElse: () => allPresets[0]);
+
+    if (item.type == ItemType.laptop || item.type == ItemType.book) {
+      if (target.activeActivity != null) return;
 
       int duration = item.type == ItemType.laptop ? 120 : 60;
-      String activityText = (item.type == ItemType.laptop)
-          ? (target.id == 'eren' ? "Openfront oynuyor! 🎮" : "Kod Yazıyor...")
-          : "Kitap Okuyor...";
+      // Preset içindeki özel aktivite metnini kullanıyoruz
+      String activityText = preset.activityTexts[item.type] ?? "Çalışıyor...";
 
       updatedChars[idx] = target.copyWith(
         activity: activityText,
@@ -281,8 +262,24 @@ class GameNotifier extends Notifier<GameStateData> {
           orderStatus: OrderStatus.processing,
         ),
       );
+    } else {
+      // Sipariş mantığı aynı...
+      if (target.isBarista && item.orderStatus == OrderStatus.pending) {
+        updatedChars[idx] = target.copyWith(
+          activeOrder: item.copyWith(orderStatus: OrderStatus.preparing),
+          activity: "${item.name} Hazırlıyor...",
+          orderFinishTime: state.gameTime.add(const Duration(minutes: 15)),
+        );
+        // ... müşteri güncellemesi
+      } else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
+        updatedChars[idx] = target.copyWith(
+          clearOrder: true,
+          activity: "Kahvesini yudumluyor ☕",
+          currentXp: target.currentXp + 50,
+          success: (target.success + 0.02).clamp(0.0, 1.0),
+        );
+      }
     }
-
     state = state.copyWith(characters: updatedChars);
   }
 }
