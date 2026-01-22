@@ -1,4 +1,7 @@
+// lib/models/character.dart
+
 import 'game_item.dart';
+import '../data/character_presets.dart';
 
 class Character {
   final String id;
@@ -11,13 +14,13 @@ class Character {
   final String title;
   final bool isBarista;
   
-  final GameItem? activeOrder; // Kahve/Çay siparişleri için
+  final GameItem? activeOrder;
   final DateTime? orderFinishTime;
   
-  final GameItem? activeActivity; // Laptop/Kitap aktiviteleri için
+  final GameItem? activeActivity;
   final DateTime? activityFinishTime;
   
-  final DateTime? arrivalTime; // Gecikme uyarısı için
+  final DateTime? arrivalTime;
   final DateTime? departureTime; 
   
   final double happiness;
@@ -25,7 +28,7 @@ class Character {
   final double love; 
   
   final String location;
-  final String activity; // Ham aktivite metni
+  final String activity;
   final bool isPresent;
 
   Character({
@@ -52,10 +55,32 @@ class Character {
     this.departureTime,
   });
 
-  // Dinamik Durum Metni Çözümü
-  String get currentStatusText {
-    if (activeOrder != null && activeActivity != null) return "Hem Çalışıyor Hem İçiyor ☕💻";
-    return activity;
+  // Preset dosyasından karakter üretme (Görsel ve Barista kontrolü eklendi)
+  factory Character.fromPreset(CharacterPreset preset, {required String id, bool isPresent = false}) {
+    String assignedImagePath = "";
+    
+    // Görsel Atama Mantığı
+    if (preset.name == "Eren") {
+      assignedImagePath = 'assets/eren.png';
+    } else if (preset.name == "Çınar") {
+      assignedImagePath = 'assets/cinar.png';
+    } else if (preset.name == "Dilay") {
+      assignedImagePath = 'assets/dilay.png';
+    } else {
+      assignedImagePath = ""; // Diğerleri için resim yok, ikon gözükür
+    }
+
+    return Character(
+      id: id,
+      name: preset.name,
+      description: preset.description,
+      title: preset.title,
+      imagePath: assignedImagePath,
+      isBarista: preset.title == "Barista", // Sadece Barista title olanlar
+      isPresent: isPresent,
+      location: isPresent ? (preset.title == "Barista" ? "Kasa" : "Masa") : "Ev",
+      activity: isPresent ? "Mekan içinde" : "Uyuyor",
+    );
   }
 
   Character copyWith({
