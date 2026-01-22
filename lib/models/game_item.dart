@@ -27,6 +27,25 @@ class GameItem {
     this.orderStatus,
   });
 
+  // Hata Çözümü: copyWith metodu eklendi
+  GameItem copyWith({
+    String? id,
+    String? name,
+    ItemType? type,
+    int? xpValue,
+    String? relatedCustomerId,
+    OrderStatus? orderStatus,
+  }) {
+    return GameItem(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      xpValue: xpValue ?? this.xpValue,
+      relatedCustomerId: relatedCustomerId ?? this.relatedCustomerId,
+      orderStatus: orderStatus ?? this.orderStatus,
+    );
+  }
+
   String get iconAsset {
     switch (type) {
       case ItemType.filterCoffee: return "☕";
