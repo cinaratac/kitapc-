@@ -57,16 +57,21 @@ class Character {
     };
   }
 
-  factory Character.fromPreset(CharacterPreset preset, {required String id, bool isPresent = false}) {
-    String path = (preset.name == "Eren") ? 'assets/eren.png' : (preset.name == "Çınar" ? 'assets/cinar.png' : (preset.name == "Dilay" ? 'assets/dilay.png' : ""));
-    return Character(
-      id: id, name: preset.name, description: preset.description,
-      title: preset.title, imagePath: path,
-      isBarista: preset.title.contains("Barista"), isPresent: isPresent,
-      location: isPresent ? (preset.title.contains("Barista") ? "Bar Arkası" : "Masa") : "Ev",
-      activity: isPresent ? "Mekanda" : "Uyuyor",
-    );
-  }
+  // lib/models/character.dart içindeki ilgili kısım
+
+factory Character.fromPreset(CharacterPreset preset, {required String id, bool isPresent = false}) {
+  return Character(
+    id: id, 
+    name: preset.name, 
+    description: preset.description,
+    title: preset.title, 
+    imagePath: preset.imagePath, // Artık preset'ten doğrudan geliyor
+    isBarista: preset.title.contains("Barista"), 
+    isPresent: isPresent,
+    location: isPresent ? (preset.title.contains("Barista") ? "Bar Arkası" : "Masa") : "Ev",
+    activity: isPresent ? "Mekanda" : "Uyuyor",
+  );
+}
 
   Character copyWith({
     int? level, int? currentXp, double? happiness, double? success,

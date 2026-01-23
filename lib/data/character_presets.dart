@@ -3,6 +3,7 @@ import '../models/game_item.dart';
 class CharacterPreset {
   final String name;
   final String description;
+  final String imagePath;
   final String title;
   final Map<ItemType, String> activityTexts; 
   final Map<ItemType, Map<String, double>> multipliers;
@@ -10,6 +11,7 @@ class CharacterPreset {
   CharacterPreset({
     required this.name,
     required this.description,
+    required this.imagePath,
     required this.title,
     required this.activityTexts,
     required this.multipliers,
@@ -22,6 +24,7 @@ final List<CharacterPreset> allPresets = [
     name: "Eren",
     description: "Müziği ve kahveyi hayatının merkezi yapmış biri. Şımarık değil, sadece dürüst.",
     title: "Barista",
+    imagePath: 'assets/eren.png',
     activityTexts: {
       ItemType.laptop: "Yeni playlistini düzenliyor... 🎧",
       ItemType.book: "Nota defterine bir şeyler karalıyor... 🎼",
@@ -35,6 +38,7 @@ final List<CharacterPreset> allPresets = [
     name: "Çınar",
     description: "Felsefe ve derin düşüncelerin insanı. Duygularını saklamayı sevmez.",
     title: "Klasik Çınar",
+    imagePath: 'assets/cinar.png',
     activityTexts: {
       ItemType.laptop: "Karanlık temada kod yazıyor... 💻",
       ItemType.book: "Felsefe kitabı okuyup uzaklara dalıyor... 📖",
@@ -48,6 +52,7 @@ final List<CharacterPreset> allPresets = [
     name: "Dilay",
     description: "Gülümsemesinin ardında derin bir yalnızlık taşıyan bir sanatçı.",
     title: "Ressam",
+    imagePath: 'assets/dilay.png',
     activityTexts: {
       ItemType.laptop: "Dijital çizim tabletiyle uğraşıyor... 🎨",
       ItemType.book: "Sanat tarihi kitabını inceliyor... 🖼️",
@@ -63,6 +68,7 @@ final List<CharacterPreset> allPresets = [
     name: "Selin",
     description: "Sürekli sınavlara hazırlanan, kafein bağımlısı bir tıp öğrencisi.",
     title: "Geleceğin Cerrahı",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Anatomi slaytlarına bakıyor... 🏥",
       ItemType.book: "Kalın bir tıp kitabında kaybolmuş... 📚",
@@ -76,6 +82,7 @@ final List<CharacterPreset> allPresets = [
     name: "Mert",
     description: "Her an yeni bir 'startup' fikriyle gelen heyecanlı bir girişimci.",
     title: "Startup Kurucusu",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Yatırımcı sunumu hazırlıyor... 📈",
       ItemType.book: "Biyografi okuyup ilham alıyor... 💡",
@@ -89,6 +96,7 @@ final List<CharacterPreset> allPresets = [
     name: "İpek",
     description: "İnsanları gözlemleyip romanı için notlar alan sessiz bir yazar.",
     title: "Gizli Yazar",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Yeni bölümün taslağını yazıyor... ✍️",
       ItemType.book: "Klasik bir roman okuyor... 📜",
@@ -102,6 +110,7 @@ final List<CharacterPreset> allPresets = [
     name: "Kerem",
     description: "Gürültücü ama sevimli, sürekli Twitch yayınlarını takip eden bir genç.",
     title: "Hardcore Gamer",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Strateji oyunu kurguluyor... 🎮",
       ItemType.book: "Oyun tasarımı dergisi karıştırıyor... 🕹️",
@@ -115,6 +124,7 @@ final List<CharacterPreset> allPresets = [
     name: "Bade",
     description: "Herkesin derdini dinleyen, dükkanın psikolojik danışmanı gibi.",
     title: "Psikolog",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Danışan notlarını düzenliyor... 🧠",
       ItemType.book: "Freud okuyup kafa sallıyor... 🧐",
@@ -128,6 +138,7 @@ final List<CharacterPreset> allPresets = [
     name: "Can",
     description: "Minimalist yaşayan, sadece siyah giyen bir grafik tasarımcı.",
     title: "Freelancer",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Logo revizyonu yapıyor... (yine) 📐",
       ItemType.book: "Tipografi kataloğu inceliyor... 🖊️",
@@ -141,6 +152,7 @@ final List<CharacterPreset> allPresets = [
     name: "Melis",
     description: "Sağlıklı yaşam takıntılı, her kahveye yulaf sütü isteyen biri.",
     title: "Wellness Koçu",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Detoks programı hazırlıyor... 🍏",
       ItemType.book: "Yoga felsefesi okuyor... 🧘",
@@ -154,6 +166,7 @@ final List<CharacterPreset> allPresets = [
     name: "Ozan",
     description: "Hangi devirde yaşadığını şaşırmış gibi görünen bir tarih öğrencisi.",
     title: "Tarihçi",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Makale taraması yapıyor... 🏛️",
       ItemType.book: "Eski bir haritayı inceliyor... 🗺️",
@@ -167,6 +180,7 @@ final List<CharacterPreset> allPresets = [
     name: "Deniz",
     description: "Sırt çantasıyla dünyayı gezen, sadece şarj için kafeye uğrayan biri.",
     title: "Gezgin",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Blogu için fotoğraf düzenliyor... 📸",
       ItemType.book: "Güney Amerika rehberine bakıyor... ✈️",
@@ -180,6 +194,7 @@ final List<CharacterPreset> allPresets = [
     name: "Ece",
     description: "Sürekli defterine kıyafet taslakları çizen havalı bir moda tasarımcısı.",
     title: "Stilist",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Defile videoları izliyor... 👠",
       ItemType.book: "Vogue dergisinin eski sayılarına bakıyor... 👗",
@@ -193,6 +208,7 @@ final List<CharacterPreset> allPresets = [
     name: "Burak",
     description: "Karmaşık formülleri peçetelere yazan bir mühendislik dâhisi.",
     title: "Mühendis",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "3D modelleme yapıyor... ⚙️",
       ItemType.book: "Kuantum fiziği üzerine okuyor... 🌌",
@@ -206,6 +222,7 @@ final List<CharacterPreset> allPresets = [
     name: "Nil",
     description: "Kulağında hep kulaklık olan, kendi dünyasında yaşayan bir müzisyen.",
     title: "Söz Yazarı",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Beat hazırlıyor... 🎹",
       ItemType.book: "Şiir kitaplarından ilham alıyor... 🖋️",
@@ -219,6 +236,7 @@ final List<CharacterPreset> allPresets = [
     name: "Arda",
     description: "Popüler kültürden nefret eden, sadece plak dinleyen bir entelektüel.",
     title: "Antikacı",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Müzayede sitelerini geziyor... 🏺",
       ItemType.book: "Ciltli, eski bir ansiklopedi okuyor... 📖",
@@ -232,6 +250,7 @@ final List<CharacterPreset> allPresets = [
     name: "Yasemin",
     description: "Kafeye sadece huzur bulmaya gelen, bitki çayı aşığı biri.",
     title: "Modern Sufi",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Meditasyon uygulaması geliştiriyor... 🧘‍♀️",
       ItemType.book: "Mevlana'nın eserlerini okuyor... ✨",
@@ -245,6 +264,7 @@ final List<CharacterPreset> allPresets = [
     name: "Emre",
     description: "Kod yazarken dünyayı unutan, dükkanın en sessiz müşterisi.",
     title: "Backend Geliştirici",
+    imagePath: 'assets/placeholder.png',
     activityTexts: {
       ItemType.laptop: "Database optimizasyonu yapıyor... 🗄️",
       ItemType.book: "Algoritma karmaşıklığı çalışıyor... 🧮",
