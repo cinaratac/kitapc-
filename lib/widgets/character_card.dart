@@ -252,6 +252,7 @@ class CharacterCard extends ConsumerWidget {
 
   Widget _buildRelationshipBar() {
     String partnerId = character.socializingWith!;
+    
     double relLevel = character.relationships[partnerId] ?? 0.0;
 
     return Padding(

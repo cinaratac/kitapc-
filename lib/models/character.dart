@@ -85,6 +85,8 @@ factory Character.fromPreset(CharacterPreset preset, {required String id, bool i
     bool? clearOrder, bool? clearActivity,Map<String, double>? relationships,
     String? socializingWith,
     bool clearSocial = false,
+    bool clearActivityFinishTime = false, 
+  bool clearOrderFinishTime = false,
   }) {
     return Character(
       id: id, name: name, description: description, imagePath: imagePath,
@@ -95,13 +97,14 @@ factory Character.fromPreset(CharacterPreset preset, {required String id, bool i
       location: location ?? this.location, activity: activity ?? this.activity,
       isPresent: isPresent ?? this.isPresent, title: title, isBarista: isBarista,
       activeOrder: (clearOrder == true) ? null : (activeOrder ?? this.activeOrder),
-      orderFinishTime: (clearOrder == true) ? null : (orderFinishTime ?? this.orderFinishTime),
+      orderFinishTime: clearOrderFinishTime ? null : (orderFinishTime ?? this.orderFinishTime),
       lastOrderTime: lastOrderTime ?? this.lastOrderTime,
       activeActivity: (clearActivity == true) ? null : (activeActivity ?? this.activeActivity),
-      activityFinishTime: (clearActivity == true) ? null : (activityFinishTime ?? this.activityFinishTime),
+      activityFinishTime: clearActivityFinishTime ? null : (activityFinishTime ?? this.activityFinishTime),
       arrivalTime: arrivalTime ?? this.arrivalTime,
       departureTime: departureTime ?? this.departureTime,relationships: relationships ?? this.relationships,
       socializingWith: clearSocial ? null : (socializingWith ?? this.socializingWith),
+      
     );
   }
 }
