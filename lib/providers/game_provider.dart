@@ -49,7 +49,7 @@ class GameNotifier extends Notifier<GameStateData> {
   @override
   GameStateData build() {
     _startTimer();
-    _loadAllData(); // Başlangıçta kaydedilmiş verileri yükle
+    _loadAllData(); // Uygulama açıldığında kaydedilmiş ilerlemeleri yükle
 
     final erenP = allPresets.firstWhere((p) => p.name == "Eren");
     final cinarP = allPresets.firstWhere((p) => p.name == "Çınar");
@@ -71,12 +71,12 @@ class GameNotifier extends Notifier<GameStateData> {
     );
   }
 
-  // --- XP VE LEVEL SİSTEMİ ---
+  // --- XP VE SEVİYE SİSTEMİ ---
   Character _applyXp(Character c, int amount) {
     int newXp = c.currentXp + amount;
     int newLevel = c.level;
     
-    // Level up kontrolü
+    // Level atlama kontrolü (Character modelindeki requiredXpForNextLevel'i kullanır)
     while (newXp >= c.requiredXpForNextLevel) {
       newXp -= c.requiredXpForNextLevel;
       newLevel++;
@@ -88,7 +88,7 @@ class GameNotifier extends Notifier<GameStateData> {
   Future<void> _saveAllData() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Karakter ilerlemelerini (Level, XP, Statlar) JSON olarak hazırla
+    // Karakter ilerlemelerini (Level, XP, Mutluluk, Başarı) JSON olarak hazırla
     final charProgress = state.characters.map((c) => {
       'id': c.id,
       'name': c.name,
@@ -149,7 +149,7 @@ class GameNotifier extends Notifier<GameStateData> {
       currentDay++;
     }
 
-    // Gün Sonu Kaydı: Saat 23:00 olduğunda tüm verileri kaydet
+    // Gün Sonu Kaydı: Saat 23:00 olduğunda tüm verileri kaydet ve dükkanı boşalt
     if (newTime.hour == 23 && newTime.minute == 0) {
       _saveAllData();
     }
@@ -161,7 +161,7 @@ class GameNotifier extends Notifier<GameStateData> {
       _handleOrdersAI(chars, newTime);
     }
 
-    _handleClosingAI(chars, newTime, isOpen);
+    _handleCirculationAI(chars, newTime, isOpen); // Müşteri sirkülasyonu (gel-git)
     _handleProcessCompletions(chars, newTime);
 
     state = state.copyWith(
@@ -248,7 +248,9 @@ class GameNotifier extends Notifier<GameStateData> {
     }
   }
 
-  void _handleClosingAI(List<Character> chars, DateTime now, bool isOpen) {
+  // --- GERÇEKÇİ SİRKÜLASYON VE KAPANIŞ MANTIĞI ---
+  void _handleCirculationAI(List<Character> chars, DateTime now, bool isOpen) {
+    // 1. Kapanış Saati (23:00): Herkes gider
     if (now.hour == 23 && now.minute == 0) {
       chars.removeWhere((c) => c.id.startsWith('musteri'));
       for (int i = 0; i < chars.length; i++) {
@@ -260,6 +262,21 @@ class GameNotifier extends Notifier<GameStateData> {
           clearActivity: true
         );
       }
+      return;
+    }
+
+    // 2. Gün İçi Sirkülasyon: Süresi dolan ve işi biten gider
+    for (int i = 0; i < chars.length; i++) {
+      Character c = chars[i];
+      if (!c.isPresent || c.isBarista) continue;
+
+      bool isTimeUp = c.departureTime != null && now.isAfter(c.departureTime!);
+      bool isIdle = c.activeOrder == null && c.activeActivity == null;
+
+      if (isTimeUp && isIdle) {
+        _sendHome(chars, i);
+        i--;
+      }
     }
   }
 
@@ -269,7 +286,7 @@ class GameNotifier extends Notifier<GameStateData> {
 
       if (c.orderFinishTime != null && now.isAfter(c.orderFinishTime!)) {
         if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
-          // Barista başarısı ve XP
+          // Barista başarısı (success) ve XP artışı
           chars[i] = _applyXp(c, 40).copyWith(
             activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready),
             activity: "Servis Hazır! 🔔",
@@ -283,7 +300,7 @@ class GameNotifier extends Notifier<GameStateData> {
         final preset = allPresets.firstWhere((p) => p.name == c.name, orElse: () => allPresets[0]);
         final m = preset.multipliers[c.activeActivity!.type] ?? {'xp': 25, 'happiness': 0.05};
         
-        // Aktivite XP ve Mutluluk
+        // Aktivite XP, Mutluluk ve Başarı artışı
         chars[i] = _applyXp(c, m['xp']?.toInt() ?? 30).copyWith(
           activity: "İşini bitirdi ✅",
           happiness: (c.happiness + (m['happiness'] ?? 0.05)).clamp(0.0, 1.0),
@@ -315,6 +332,20 @@ class GameNotifier extends Notifier<GameStateData> {
     );
   }
 
+  void _sendHome(List<Character> list, int index) {
+    if (list[index].id.startsWith('musteri')) {
+      list.removeAt(index);
+    } else {
+      list[index] = list[index].copyWith(
+        isPresent: false, 
+        location: "Ev", 
+        activity: "Eve döndü 🏡", 
+        clearOrder: true, 
+        clearActivity: true
+      );
+    }
+  }
+
   void giveItemToCharacter(String charId, GameItem item) {
     List<Character> updated = [...state.characters];
     int idx = updated.indexWhere((c) => c.id == charId);
@@ -341,11 +372,11 @@ class GameNotifier extends Notifier<GameStateData> {
         int cIdx = updated.indexWhere((c) => c.id == item.relatedCustomerId);
         if (cIdx != -1) updated[cIdx] = updated[cIdx].copyWith(activity: "Bekliyor...", activeOrder: item.copyWith(orderStatus: OrderStatus.processing));
       } else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
-        // Kahve tesliminde XP ve Mutluluk
+        // Kahve tesliminde XP ve Mutluluk artışı
         Character happyChar = _applyXp(target, 50);
         updated[idx] = happyChar.copyWith(
           clearOrder: true,
-          activity: "Keyfi yerinde ☕",
+          activity: "Kahvesini içiyor ☕",
           lastOrderTime: state.gameTime,
           happiness: (target.happiness + 0.1).clamp(0.0, 1.0),
         );
