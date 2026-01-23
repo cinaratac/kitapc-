@@ -44,32 +44,35 @@ class GameStateData {
 class GameNotifier extends Notifier<GameStateData> {
   Timer? _timer;
   final Random _rng = Random();
-  int _customerCounter = 1;
 
   @override
   GameStateData build() {
     _startTimer();
-    _loadAllData();
 
-    final erenP = allPresets.firstWhere((p) => p.name == "Eren");
-    final cinarP = allPresets.firstWhere((p) => p.name == "Çınar");
+    // 1. Tüm karakterleri presetlerden oluştur (Sabit liste)
+    final allInitialCharacters = allPresets.map((preset) {
+      return Character.fromPreset(
+        preset, 
+        id: preset.name.toLowerCase(), 
+        isPresent: false
+      ).copyWith(
+        location: "Ev",
+        activity: "Evde",
+      );
+    }).toList();
 
-    // Oyun başlangıç saati 09:30 olarak ayarlandı
-    return GameStateData(
+    // İlk state kurulumu
+    final initialState = GameStateData(
       gameTime: DateTime(2025, 1, 1, 9, 30),
       isShopOpen: false,
       dayCount: 1,
-      characters: [
-        Character.fromPreset(erenP, id: 'eren', isPresent: false).copyWith(
-          location: "Ev", 
-          activity: "Güne hazırlanıyor..."
-        ),
-        Character.fromPreset(cinarP, id: 'cinar', isPresent: false).copyWith(
-          location: "Ev", 
-          activity: "Uyuyor"
-        ),
-      ],
+      characters: allInitialCharacters,
     );
+
+    // Verileri yükle
+    Future.microtask(() => _loadAllData()); 
+
+    return initialState;
   }
 
   // --- XP VE SEVİYE SİSTEMİ ---
@@ -86,19 +89,9 @@ class GameNotifier extends Notifier<GameStateData> {
   // --- VERİ KAYDETME ---
   Future<void> _saveAllData() async {
     final prefs = await SharedPreferences.getInstance();
-    final charProgress = state.characters.map((c) => {
-      'id': c.id,
-      'name': c.name,
-      'level': c.level,
-      'currentXp': c.currentXp,
-      'happiness': c.happiness,
-      'success': c.success,
-      'love': c.love,
-    }).toList();
-
+    final charProgress = state.characters.map((c) => c.toJson()).toList();
     await prefs.setString('saved_character_progress', jsonEncode(charProgress));
     await prefs.setInt('game_day_count', state.dayCount);
-    print("SİSTEM: Veriler kaydedildi.");
   }
 
   // --- VERİ YÜKLEME ---
@@ -110,6 +103,7 @@ class GameNotifier extends Notifier<GameStateData> {
     if (savedCharsJson != null) {
       final List<dynamic> decoded = jsonDecode(savedCharsJson);
       List<Character> updatedChars = [...state.characters];
+
       for (var savedData in decoded) {
         int idx = updatedChars.indexWhere((c) => c.id == savedData['id']);
         if (idx != -1) {
@@ -137,29 +131,25 @@ class GameNotifier extends Notifier<GameStateData> {
     int currentDay = state.dayCount;
     List<Character> chars = [...state.characters];
 
-    // --- GÜN SONU VE ZAMAN SIÇRAMASI (23:00) ---
+    // --- GÜN SONU SIÇRAMASI (23:00) ---
     if (newTime.hour == 23 && newTime.minute == 0) {
       _saveAllData(); 
       currentDay++; 
       
-      // Müşterileri temizle ve çalışanları eve gönder
-      chars.removeWhere((c) => c.id.startsWith('musteri'));
       for (int i = 0; i < chars.length; i++) {
         chars[i] = chars[i].copyWith(
           isPresent: false,
           location: "Ev",
-          activity: "Uyuyor 💤",
+          activity: "Uyuyor",
           clearOrder: true,
           clearActivity: true,
         );
       }
       
-      // Zamanı doğrudan ertesi sabah 09:30'a ayarla
       newTime = DateTime(newTime.year, newTime.month, newTime.day)
           .add(const Duration(days: 1, hours: 9, minutes: 30));
     }
 
-    // Dükkan Açılış: 10:00, Kapanış: 23:00
     bool isOpen = newTime.hour >= 10 && newTime.hour < 23;
 
     _handleRoutines(chars, newTime);
@@ -169,7 +159,7 @@ class GameNotifier extends Notifier<GameStateData> {
       _handleOrdersAI(chars, newTime);
     }
 
-    _handleCirculationAI(chars, newTime, isOpen);
+    _handleCirculationAI(chars, newTime);
     _handleProcessCompletions(chars, newTime);
 
     state = state.copyWith(
@@ -183,7 +173,6 @@ class GameNotifier extends Notifier<GameStateData> {
   void _handleRoutines(List<Character> chars, DateTime now) {
     int erenIdx = chars.indexWhere((c) => c.id == 'eren');
     if (erenIdx != -1) {
-      // 09:30 - 10:00 arası hazırlık aşaması
       if (now.hour == 9 && now.minute >= 30 && !chars[erenIdx].isPresent) {
         chars[erenIdx] = chars[erenIdx].copyWith(
           isPresent: true, 
@@ -191,7 +180,6 @@ class GameNotifier extends Notifier<GameStateData> {
           activity: "Tezgahı siliyor... 🧹"
         );
       }
-      // 10:00'da dükkan açılır, Barista bar arkasına geçer
       if (now.hour >= 10 && chars[erenIdx].location == "Mutfak") {
         chars[erenIdx] = chars[erenIdx].copyWith(
           location: "Bar Arkası", 
@@ -202,31 +190,24 @@ class GameNotifier extends Notifier<GameStateData> {
   }
 
   void _handleSpawning(List<Character> chars, DateTime now) {
-    int currentCustomers = chars.where((c) => c.id.startsWith('musteri')).length;
-    if (currentCustomers < 6 && _rng.nextInt(100) < 8) {
-      final available = allPresets.where((p) => p.name != "Eren" && p.name != "Çınar").toList();
-      final p = available[_rng.nextInt(available.length)];
-      if (!chars.any((c) => c.name == p.name && c.isPresent)) {
+    int currentInShop = chars.where((c) => c.isPresent && !c.isBarista).length;
+    
+    if (currentInShop < 6 && _rng.nextInt(100) < 8) {
+      final candidates = chars.where((c) => !c.isPresent && !c.isBarista).toList();
+      
+      if (candidates.isNotEmpty) {
+        final target = candidates[_rng.nextInt(candidates.length)];
+        int idx = chars.indexWhere((c) => c.id == target.id);
+        
         int stayMinutes = 45 + _rng.nextInt(180);
-        chars.add(Character.fromPreset(p, id: "musteri_$_customerCounter", isPresent: true).copyWith(
+        chars[idx] = chars[idx].copyWith(
+          isPresent: true,
+          location: "Masa",
+          activity: "Dükkana girdi...",
           arrivalTime: now,
           departureTime: now.add(Duration(minutes: stayMinutes)),
-          activity: "Dükkana girdi...",
-          location: "Masa",
-        ));
-        _customerCounter++;
+        );
       }
-    }
-
-    int cinarIdx = chars.indexWhere((c) => c.id == 'cinar');
-    if (cinarIdx != -1 && !chars[cinarIdx].isPresent && _rng.nextInt(100) < 2) {
-      chars[cinarIdx] = chars[cinarIdx].copyWith(
-        isPresent: true, 
-        location: "Giriş", 
-        activity: "Selam! 🙋‍♂️", 
-        arrivalTime: now,
-        departureTime: now.add(const Duration(minutes: 150)),
-      );
     }
   }
 
@@ -257,17 +238,21 @@ class GameNotifier extends Notifier<GameStateData> {
     }
   }
 
-  void _handleCirculationAI(List<Character> chars, DateTime now, bool isOpen) {
+  void _handleCirculationAI(List<Character> chars, DateTime now) {
     for (int i = 0; i < chars.length; i++) {
-      Character c = chars[i];
-      if (!c.isPresent || c.isBarista) continue;
+      if (!chars[i].isPresent || chars[i].isBarista) continue;
 
-      bool isTimeUp = c.departureTime != null && now.isAfter(c.departureTime!);
-      bool isIdle = c.activeOrder == null && c.activeActivity == null;
+      bool isTimeUp = chars[i].departureTime != null && now.isAfter(chars[i].departureTime!);
+      bool isIdle = chars[i].activeOrder == null && chars[i].activeActivity == null;
 
       if (isTimeUp && isIdle) {
-        _sendHome(chars, i);
-        i--;
+        chars[i] = chars[i].copyWith(
+          isPresent: false, 
+          location: "Ev", 
+          activity: "Eve döndü 🏡", 
+          clearOrder: true, 
+          clearActivity: true
+        );
       }
     }
   }
@@ -316,20 +301,6 @@ class GameNotifier extends Notifier<GameStateData> {
       ),
       activity: "Canı ${pick['name']} çekti!",
     );
-  }
-
-  void _sendHome(List<Character> list, int index) {
-    if (list[index].id.startsWith('musteri')) {
-      list.removeAt(index);
-    } else {
-      list[index] = list[index].copyWith(
-        isPresent: false, 
-        location: "Ev", 
-        activity: "Eve döndü 🏡", 
-        clearOrder: true, 
-        clearActivity: true
-      );
-    }
   }
 
   void giveItemToCharacter(String charId, GameItem item) {
