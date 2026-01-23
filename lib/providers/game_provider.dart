@@ -3,284 +3,374 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/character.dart';
 import '../models/game_item.dart';
-import '../data/character_presets.dart'; // Presetleri ekledik
+import '../data/character_presets.dart';
 
+// OYUNUN TÜM DURUMUNU TAŞIYAN ANA SINIF
 class GameStateData {
   final List<Character> characters;
   final DateTime gameTime;
   final bool isShopOpen;
+  final int dailyRevenue; // Günlük puan/başarı takibi
 
   GameStateData({
     required this.characters,
     required this.gameTime,
     required this.isShopOpen,
+    this.dailyRevenue = 0,
   });
 
   GameStateData copyWith({
     List<Character>? characters,
     DateTime? gameTime,
     bool? isShopOpen,
+    int? dailyRevenue,
   }) {
     return GameStateData(
       characters: characters ?? this.characters,
       gameTime: gameTime ?? this.gameTime,
       isShopOpen: isShopOpen ?? this.isShopOpen,
+      dailyRevenue: dailyRevenue ?? this.dailyRevenue,
     );
   }
 }
 
+// OYUNUN BEYNİ VE YAPAY ZEKA MOTORU
 class GameNotifier extends Notifier<GameStateData> {
   Timer? _timer;
   final Random _rng = Random();
   int _customerCounter = 1;
+  // XP ekleme ve Level kontrolü yapan yardımcı fonksiyon
+ Character _applyXp(Character c, int amount) {
+  int newXp = c.currentXp + amount;
+  int newLevel = c.level;
+  
+  // Seviye atlama kontrolü (Character modelindeki requiredXpForNextLevel'i kullanır)
+  while (newXp >= c.requiredXpForNextLevel) {
+    newXp -= c.requiredXpForNextLevel;
+    newLevel++;
+  }
 
+  return c.copyWith(currentXp: newXp, level: newLevel);
+}
   @override
   GameStateData build() {
     _startTimer();
 
-    // Preset listesinden ana karakterleri buluyoruz
-    final erenPreset = allPresets.firstWhere((p) => p.name == "Eren");
-    final cinarPreset = allPresets.firstWhere((p) => p.name == "Çınar");
+    // Ana karakterleri preset dosyasından çekiyoruz
+    final erenP = allPresets.firstWhere((p) => p.name == "Eren");
+    final cinarP = allPresets.firstWhere((p) => p.name == "Çınar");
 
     return GameStateData(
-      gameTime: DateTime(2025, 1, 1, 9, 30),
+      gameTime: DateTime(2025, 1, 1, 10, 0), // Sabah 10:00 Hazırlık
       isShopOpen: false,
       characters: [
-        Character(
-          id: 'eren',
-          name: erenPreset.name,
-          description: erenPreset.description,
-          imagePath: 'assets/eren.png',
-          title: erenPreset.title,
-          isBarista: true,
-          isPresent: false,
-          location: "Ev",
-          activity: "Uyanıyor...",
+        Character.fromPreset(erenP, id: 'eren', isPresent: false).copyWith(
+          location: "Ev", 
+          activity: "Güne hazırlanıyor..."
         ),
-        Character(
-          id: 'cinar',
-          name: cinarPreset.name,
-          description: cinarPreset.description,
-          imagePath: 'assets/cinar.png',
-          title: cinarPreset.title,
-          isPresent: false,
-          location: "Ev",
-          activity: "Uyuyor",
+        Character.fromPreset(cinarP, id: 'cinar', isPresent: false).copyWith(
+          location: "Ev", 
+          activity: "Uyuyor"
         ),
       ],
     );
   }
 
+  // ZAMAN DÖNGÜSÜ: 1 Saniye = 1 Dakika
   void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _tick();
     });
   }
 
+  // HER DAKİKA ÇALIŞAN ANA MOTOR
   void _tick() {
     DateTime newTime = state.gameTime.add(const Duration(minutes: 1));
     bool isOpen = newTime.hour >= 11 && newTime.hour < 23;
     List<Character> chars = [...state.characters];
 
-    // --- BARISTA RUTİNİ ---
-    if (newTime.hour == 10 && newTime.minute == 0) {
-      int idx = chars.indexWhere((c) => c.id == 'eren');
-      if (idx != -1) {
-        chars[idx] = chars[idx].copyWith(
-          isPresent: true,
-          location: "Kasa",
-          activity: "Dükkanı Hazırlıyor 🧹",
-        );
-      }
-    }
+    // --- 1. BARISTA VE ANA KARAKTER RUTİNLERİ ---
+    _handleRoutines(chars, newTime);
 
-    if (newTime.hour == 11 && newTime.minute == 0) {
-      int idx = chars.indexWhere((c) => c.id == 'eren');
-      if (idx != -1) {
-        chars[idx] = chars[idx].copyWith(
-          location: "Bar Arkası",
-          activity: "Sipariş Bekliyor",
-        );
-      }
-    }
-
-    // --- MÜŞTERİ SİRKÜLASYONU VE SİPARİŞ ZEKSASI ---
+    // --- 2. SİPARİŞ VE MÜŞTERİ ZEKSASI (AI) ---
     if (isOpen) {
-      int currentCustomers = chars.where((c) => c.id.startsWith('musteri')).length;
-      if (currentCustomers < 5 && _rng.nextInt(100) < 5) {
-        _spawnCustomer(chars, newTime);
-      }
+      _handleSpawning(chars, newTime);
+      _handleOrdersAI(chars, newTime);
+    }
 
-      int cinarIdx = chars.indexWhere((c) => c.id == 'cinar');
-      if (cinarIdx != -1 && !chars[cinarIdx].isPresent && _rng.nextInt(100) < 2) {
-        DateTime depart = newTime.add(Duration(minutes: 120 + _rng.nextInt(240)));
-        chars[cinarIdx] = chars[cinarIdx].copyWith(
-          isPresent: true,
-          location: "Giriş",
-          activity: "Selam Veriyor 👋",
-          departureTime: depart,
+    // --- 3. KAPANIŞ VE AYRILMA STRATEJİSİ ---
+    _handleClosingAI(chars, newTime, isOpen);
+
+    // --- 4. SÜREÇ TAMAMLANMALARI ---
+    _handleProcessCompletions(chars, newTime);
+
+    state = state.copyWith(
+      gameTime: newTime,
+      isShopOpen: isOpen,
+      characters: chars,
+    );
+  }
+
+  // BARİSTA VE ANA KARAKTERLERİN GÜNLÜK HAREKETLERİ
+  void _handleRoutines(List<Character> chars, DateTime now) {
+    int erenIdx = chars.indexWhere((c) => c.id == 'eren');
+    if (erenIdx != -1) {
+      // 10:30'da hazırlığa gelir
+      if (now.hour == 10 && now.minute == 30 && !chars[erenIdx].isPresent) {
+        chars[erenIdx] = chars[erenIdx].copyWith(
+          isPresent: true, 
+          location: "Mutfak", 
+          activity: "Tezgahı siliyor... 🧹"
         );
       }
+      // 11:00'de bar arkasına geçer
+      if (now.hour == 11 && now.minute == 0) {
+        chars[erenIdx] = chars[erenIdx].copyWith(
+          location: "Bar Arkası", 
+          activity: "Sipariş Bekliyor"
+        );
+      }
+    }
+  }
 
-      int activeOrdersCount = chars.where((c) {
-        if (c.activeOrder == null) return false;
-        return c.activeOrder!.orderStatus == OrderStatus.pending || 
-               c.activeOrder!.orderStatus == OrderStatus.processing;
-      }).length;
-
-      if (activeOrdersCount < 3) {
-        List<int> potentialOrderers = [];
-        for (int i = 0; i < chars.length; i++) {
-          if (chars[i].isPresent && !chars[i].isBarista && chars[i].activeOrder == null) {
-            potentialOrderers.add(i);
-          }
-        }
-
-        if (potentialOrderers.isNotEmpty && _rng.nextInt(100) < 10) {
-          int luckyIdx = potentialOrderers[_rng.nextInt(potentialOrderers.length)];
-          chars[luckyIdx] = _generateOrderForCharacter(chars[luckyIdx], newTime);
-        }
+  // MÜŞTERİ GELİŞ-GİDİŞ YÖNETİMİ
+  void _handleSpawning(List<Character> chars, DateTime now) {
+    int currentCustomers = chars.where((c) => c.id.startsWith('musteri')).length;
+    
+    // Rastgele yeni müşteri (%8 şans)
+    if (currentCustomers < 6 && _rng.nextInt(100) < 8) {
+      final available = allPresets.where((p) => p.name != "Eren" && p.name != "Çınar").toList();
+      final p = available[_rng.nextInt(available.length)];
+      
+      if (!chars.any((c) => c.name == p.name && c.isPresent)) {
+        int stayMinutes = 45 + _rng.nextInt(180);
+        chars.add(Character.fromPreset(p, id: "musteri_$_customerCounter", isPresent: true).copyWith(
+          arrivalTime: now,
+          departureTime: now.add(Duration(minutes: stayMinutes)),
+          activity: "Dükkana girdi...",
+          location: "Masa",
+        ));
+        _customerCounter++;
       }
     }
 
-    // --- AYRILMA VE GÖREV KONTROLLERİ ---
+    // Çınar her dakika %2 şansla gelmeyi dener
+    int cinarIdx = chars.indexWhere((c) => c.id == 'cinar');
+    if (cinarIdx != -1 && !chars[cinarIdx].isPresent && _rng.nextInt(100) < 2) {
+      chars[cinarIdx] = chars[cinarIdx].copyWith(
+        isPresent: true, 
+        location: "Giriş", 
+        activity: "Selam! 🙋‍♂️", 
+        arrivalTime: now,
+        departureTime: now.add(const Duration(minutes: 150)),
+      );
+    }
+  }
+
+  // GELİŞMİŞ SİPARİŞ ZEKSASI
+  void _handleOrdersAI(List<Character> chars, DateTime now) {
+    // KURAL: Dükkanda toplamda en fazla 3 sipariş olabilir (Bekleyen + Hazırlanan + Hazır)
+    int globalActiveOrders = chars.where((c) => c.activeOrder != null).length;
+    if (globalActiveOrders >= 3) return;
+
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
-      if (c.isPresent && !c.isBarista && c.departureTime != null && 
-          newTime.isAfter(c.departureTime!) && c.activeOrder == null && c.activeActivity == null) {
-        if (c.id.startsWith('musteri')) {
-          chars.removeAt(i);
-          i--;
-          continue;
-        } else {
-          chars[i] = c.copyWith(
-            isPresent: false,
-            location: "Ev",
-            activity: "Dinleniyor",
-            clearOrder: true,
-            clearActivity: true,
-          );
+      if (!c.isPresent || c.isBarista || c.activeOrder != null || c.activeActivity != null) continue;
+
+      bool wantsToOrder = false;
+
+      // KURAL: İlk sipariş dükkana girdikten 15-30 dk sonra verilmeli
+      if (c.lastOrderTime == null) {
+        if (c.arrivalTime != null && now.difference(c.arrivalTime!).inMinutes > 20) {
+          wantsToOrder = true;
+        }
+      } else {
+        // KURAL: Her siparişten sonra minimum 2 saat (120 dk) beklenmeli
+        if (now.difference(c.lastOrderTime!).inMinutes >= 120) {
+          wantsToOrder = true;
         }
       }
 
-      // Sipariş/Aktivite bitiş kontrolleri... (Önceki kodla aynı)
-      if (c.orderFinishTime != null && newTime.isAfter(c.orderFinishTime!)) {
-        if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
-          chars[i] = c.copyWith(
-            activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready),
-            activity: "Servis Hazır! 🔔",
-            orderFinishTime: null,
-          );
-        }
-      }
+      // Kapanışa 30 dk kala yeni sipariş verilmez
+      if (now.hour == 22 && now.minute > 30) wantsToOrder = false;
 
-      if (c.activityFinishTime != null && newTime.isAfter(c.activityFinishTime!)) {
-        // Preset üzerinden çarpanları uygulama
-        final preset = allPresets.firstWhere((p) => p.name == c.name, orElse: () => allPresets[0]);
-        final type = c.activeActivity?.type;
-        
-        if (type != null && preset.multipliers.containsKey(type)) {
-          final m = preset.multipliers[type]!;
-          chars[i] = c.copyWith(
-            activity: "${c.activeActivity?.name} bitti",
-            happiness: (c.happiness + (m['happiness'] ?? 0)).clamp(0.0, 1.0),
-            success: (c.success + (m['success'] ?? 0)).clamp(0.0, 1.0),
-            currentXp: c.currentXp + (m['xp']?.toInt() ?? 20),
-            clearActivity: true,
-          );
+      if (wantsToOrder && _rng.nextInt(100) < 10) {
+        chars[i] = _triggerNewOrder(c, now);
+      }
+    }
+  }
+
+  // YAPAY ZEKA: KAPANIŞ VE AYRILMA MANTIĞI
+  void _handleClosingAI(List<Character> chars, DateTime now, bool isOpen) {
+    // SAAT 23:00 KURALI: Dükkan kesin kapanır, herkes gider!
+    if (now.hour == 23 && now.minute == 0) {
+      chars.removeWhere((c) => c.id.startsWith('musteri'));
+      for (int i = 0; i < chars.length; i++) {
+        chars[i] = chars[i].copyWith(
+          isPresent: false, 
+          location: "Ev", 
+          activity: "Kapandı 💤", 
+          clearOrder: true, 
+          clearActivity: true
+        );
+      }
+      return;
+    }
+
+    // SAAT 22:00'DEN SONRA: Müşteriler yavaş yavaş gitmeye başlar
+    if (now.hour == 22) {
+      for (int i = 0; i < chars.length; i++) {
+        Character c = chars[i];
+        if (!c.isPresent || c.isBarista) continue;
+
+        // KURAL: Siparişi varsa ASLA almadan gitmez (23:00'e kadar bekler)
+        if (c.activeOrder == null && c.activeActivity == null) {
+          // Süresi dolmuşsa veya %15 şansla erken gitmek istiyorsa
+          if ((c.departureTime != null && now.isAfter(c.departureTime!)) || _rng.nextInt(100) < 15) {
+            _sendHome(chars, i);
+            i--;
+          }
         }
       }
     }
 
-    state = state.copyWith(gameTime: newTime, isShopOpen: isOpen, characters: chars);
+    // GÜN İÇİNDE NORMAL AYRILMA
+    if (isOpen) {
+      for (int i = 0; i < chars.length; i++) {
+        Character c = chars[i];
+        if (c.isPresent && !c.isBarista && c.departureTime != null && now.isAfter(c.departureTime!)) {
+          // Sadece işi bittiyse gider
+          if (c.activeOrder == null && c.activeActivity == null) {
+            _sendHome(chars, i);
+            i--;
+          }
+        }
+      }
+    }
   }
 
-  void _spawnCustomer(List<Character> list, DateTime currentTime) {
-    // Eren ve Çınar dışındaki presetlerden rastgele seçiyoruz
-    final availablePresets = allPresets.where((p) => p.name != "Eren" && p.name != "Çınar").toList();
-    final randomPreset = availablePresets[_rng.nextInt(availablePresets.length)];
-    
-    String custId = "musteri_$_customerCounter";
-    _customerCounter++;
+  // SÜREÇLERİN BİTİŞ KONTROLLERİ
+  void _handleProcessCompletions(List<Character> chars, DateTime now) {
+    for (int i = 0; i < chars.length; i++) {
+      Character c = chars[i];
 
-    int stayDuration = 60 + _rng.nextInt(180);
-    DateTime departAt = currentTime.add(Duration(minutes: stayDuration));
+      // Barista kahveyi bitirdi mi?
+      if (c.orderFinishTime != null && now.isAfter(c.orderFinishTime!)) {
+        if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
+  // Barista için 40 XP ve 0.05 Başarı puanı ekle
+  Character updatedEren = _applyXp(c, 40); 
+  chars[i] = updatedEren.copyWith(
+    activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready),
+    activity: "Servis Hazır! 🔔",
+    success: c.success + 0.05, // Başarı barını yükselt
+    orderFinishTime: null,
+  );
+}
+      }
 
-    list.add(Character(
-      id: custId,
-      name: randomPreset.name,
-      description: randomPreset.description,
-      imagePath: 'assets/cinar.png', // Tüm müşteriler şimdilik aynı görseli kullanabilir
-      title: randomPreset.title,
-      isPresent: true,
-      location: "Masa",
-      activity: "Dükkana girdi...",
-      departureTime: departAt,
-    ));
+      // Aktivite bitti mi?
+      if (c.activityFinishTime != null && now.isAfter(c.activityFinishTime!)) {
+  final preset = allPresets.firstWhere((p) => p.name == c.name, orElse: () => allPresets[0]);
+  final m = preset.multipliers[c.activeActivity!.type] ?? {'xp': 25, 'happiness': 0.05};
+  
+  // Aktiviteye göre özel XP ve Mutluluk/Başarı artışı
+  Character finishedChar = _applyXp(c, m['xp']?.toInt() ?? 30);
+  chars[i] = finishedChar.copyWith(
+    activity: "İşini bitirdi ✅",
+    happiness: c.happiness + (m['happiness'] ?? 0.05),
+    success: c.success + (m['success'] ?? 0.02),
+    clearActivity: true,
+  );
+}
+    }
   }
 
-  Character _generateOrderForCharacter(Character c, DateTime currentTime) {
-    List<ItemType> drinks = [ItemType.filterCoffee, ItemType.latte, ItemType.espresso, ItemType.herbalTea];
-    ItemType wanted = drinks[_rng.nextInt(drinks.length)];
-    
-    GameItem order = GameItem(
-      id: "ord_${currentTime.millisecondsSinceEpoch}",
-      name: wanted.name,
-      type: wanted,
-      relatedCustomerId: c.id,
-      orderStatus: OrderStatus.pending,
-    );
+  // YARDIMCI: SİPARİŞ TETİKLEME
+  Character _triggerNewOrder(Character c, DateTime now) {
+    final drinks = [
+      {'name': 'Filtre Kahve', 'type': ItemType.filterCoffee},
+      {'name': 'Latte', 'type': ItemType.latte},
+      {'name': 'Espresso', 'type': ItemType.espresso},
+      {'name': 'Bitki Çayı', 'type': ItemType.herbalTea},
+    ];
+    final pick = drinks[_rng.nextInt(drinks.length)];
 
     return c.copyWith(
-      activeOrder: order,
-      activity: "Canı ${order.name} çekti...",
-      arrivalTime: currentTime,
+      activeOrder: GameItem(
+        id: "ord_${now.millisecondsSinceEpoch}",
+        name: pick['name'] as String,
+        type: pick['type'] as ItemType,
+        relatedCustomerId: c.id,
+        orderStatus: OrderStatus.pending,
+      ),
+      activity: "Canı ${pick['name']} çekti!",
     );
   }
 
-  void giveItemToCharacter(String charId, GameItem item) {
-    List<Character> updatedChars = [...state.characters];
-    int idx = updatedChars.indexWhere((c) => c.id == charId);
-    if (idx == -1) return;
-    Character target = updatedChars[idx];
+  // YARDIMCI: EVE GÖNDERME
+  void _sendHome(List<Character> list, int index) {
+    if (list[index].id.startsWith('musteri')) {
+      list.removeAt(index);
+    } else {
+      list[index] = list[index].copyWith(
+        isPresent: false, 
+        location: "Ev", 
+        activity: "Gitti", 
+        clearOrder: true, 
+        clearActivity: true
+      );
+    }
+  }
 
-    // Karakterin presetini bul (Özel diyaloglar için)
+  // --- UI'DAN ÇAĞRILAN: EŞYA TESLİMATI ---
+  void giveItemToCharacter(String charId, GameItem item) {
+    List<Character> updated = [...state.characters];
+    int idx = updated.indexWhere((c) => c.id == charId);
+    if (idx == -1) return;
+    Character target = updated[idx];
     final preset = allPresets.firstWhere((p) => p.name == target.name, orElse: () => allPresets[0]);
 
+    // 1. AKTİVİTE TEPKİSİ
     if (item.type == ItemType.laptop || item.type == ItemType.book) {
       if (target.activeActivity != null) return;
+      
+      // PRESET TEPKİSİ: Dosyadan çek, yoksa varsayılan kullan
+      String reaction = preset.activityTexts[item.type] ?? (item.type == ItemType.laptop ? "Laptop başında..." : "Kitap okuyor...");
 
-      int duration = item.type == ItemType.laptop ? 120 : 60;
-      // Preset içindeki özel aktivite metnini kullanıyoruz
-      String activityText = preset.activityTexts[item.type] ?? "Çalışıyor...";
-
-      updatedChars[idx] = target.copyWith(
-        activity: activityText,
-        activityFinishTime: state.gameTime.add(Duration(minutes: duration)),
-        activeActivity: item.copyWith(
-          id: "act_${_rng.nextInt(999)}",
-          orderStatus: OrderStatus.processing,
-        ),
+      updated[idx] = target.copyWith(
+        activity: reaction,
+        activityFinishTime: state.gameTime.add(Duration(minutes: item.type == ItemType.laptop ? 60 : 30)),
+        activeActivity: item.copyWith(orderStatus: OrderStatus.processing),
       );
-    } else {
-      // Sipariş mantığı aynı...
-      if (target.isBarista && item.orderStatus == OrderStatus.pending) {
-        updatedChars[idx] = target.copyWith(
+    } 
+    // 2. SİPARİŞ YÖNETİMİ
+    else {
+      // Barista Siparişi Alır
+      if (target.isBarista && item.orderStatus == OrderStatus.pending && target.activeOrder == null) {
+        updated[idx] = target.copyWith(
           activeOrder: item.copyWith(orderStatus: OrderStatus.preparing),
-          activity: "${item.name} Hazırlıyor...",
-          orderFinishTime: state.gameTime.add(const Duration(minutes: 15)),
+          activity: "${item.name} hazırlıyor... (5dk)",
+          orderFinishTime: state.gameTime.add(const Duration(minutes: 5)),
         );
-        // ... müşteri güncellemesi
-      } else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
-        updatedChars[idx] = target.copyWith(
-          clearOrder: true,
-          activity: "Kahvesini yudumluyor ☕",
-          currentXp: target.currentXp + 50,
-          success: (target.success + 0.02).clamp(0.0, 1.0),
-        );
+        int cIdx = updated.indexWhere((c) => c.id == item.relatedCustomerId);
+        if (cIdx != -1) updated[cIdx] = updated[cIdx].copyWith(activity: "Bekliyor...", activeOrder: item.copyWith(orderStatus: OrderStatus.processing));
+      } 
+      // Müşteri Kahvesini Alır
+      else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
+  // Kahve içen müşteriye 50 XP ve 0.1 Mutluluk ekle
+  Character happyChar = _applyXp(target, 50);
+  updated[idx] = happyChar.copyWith(
+    clearOrder: true,
+    activity: "Keyfi yerinde ☕",
+    lastOrderTime: state.gameTime, // 2 saatlik bekleme süresini başlatır
+    happiness: target.happiness + 0.1, // Mutluluk barını yükselt
+  );
+        int bIdx = updated.indexWhere((c) => c.isBarista);
+        if (bIdx != -1) updated[bIdx] = updated[bIdx].copyWith(clearOrder: true, activity: "Sipariş Bekliyor");
       }
     }
-    state = state.copyWith(characters: updatedChars);
+    state = state.copyWith(characters: updated);
   }
 }
 
