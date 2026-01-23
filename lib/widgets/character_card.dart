@@ -14,9 +14,9 @@ class CharacterCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final gameState = ref.watch(gameProvider);
     double opacity = character.isPresent ? 1.0 : 0.4;
-    bool isSocializing = character.socializingWith != null; //
+    bool isSocializing = character.socializingWith != null;
 
-    // 20 DAKİKALIK BEKLEME KONTROLÜ
+    // 20 DAKİKALIK BEKLEME KONTROLÜ (Kırmızı Kenarlık İçin)
     bool isWaitingTooLong = false;
     if (character.activeOrder?.orderStatus == OrderStatus.pending && 
         character.arrivalTime != null) {
@@ -28,18 +28,22 @@ class CharacterCard extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // EŞYA TESLİMİ İÇİN DRAG TARGET
+        // --- KATMAN 1: EŞYA TESLİMİ İÇİN GENEL DRAG TARGET ---
         return DragTarget<GameItem>(
           onWillAccept: (incomingItem) {
             if (!character.isPresent || incomingItem == null) return false;
+            
+            // Barista Kontrolü
             if (character.isBarista) {
               if (incomingItem.orderStatus == OrderStatus.pending) {
                 return character.activeOrder == null;
               }
             }
+            // Müşteri Kendi Siparişi Kontrolü
             if (!character.isBarista && incomingItem.relatedCustomerId == character.id) {
               if (incomingItem.orderStatus == OrderStatus.ready) return true;
             }
+            // Genel Aktivite Eşyaları
             if (incomingItem.type == ItemType.laptop || incomingItem.type == ItemType.book) {
               return character.activeActivity == null;
             }
@@ -50,11 +54,11 @@ class CharacterCard extends ConsumerWidget {
           },
           builder: (context, candidateData, rejectedData) {
             return Stack(
-              clipBehavior: Clip.none,
+              clipBehavior: Clip.none, // Baloncukların dışarı taşması için
               children: [
-                // ANA KART YAPISI
+                // --- ANA KART ---
                 Padding(
-                  padding: const EdgeInsets.all(12.0),
+                  padding: const EdgeInsets.all(12.0), // Daire ve balonlar için boşluk
                   child: GestureDetector(
                     onTap: () {
                       Navigator.push(
@@ -79,7 +83,7 @@ class CharacterCard extends ConsumerWidget {
                         child: Container(
                           width: constraints.maxWidth,
                           height: constraints.maxHeight,
-                          padding: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.only(top: 22, left: 10, right: 10, bottom: 10),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -106,7 +110,7 @@ class CharacterCard extends ConsumerWidget {
                                       : Icon(Icons.person, size: 60, color: Colors.grey[400]),
                                 ),
                               ),
-                              // İsim & Aktivite Metni
+                              // İsim & Aktivite
                               Column(
                                 children: [
                                   Text(character.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -151,12 +155,15 @@ class CharacterCard extends ConsumerWidget {
                   ),
                 ),
                 
-                // SOSYALLİK DAİRESİ (Sürükle-Bırak)
+                // --- SOSYALLİK DAİRESİ (Üst-Orta Konum) ---
                 if (character.isPresent)
                   Positioned(
-                    bottom: 20,
-                    right: 20,
-                    child: _buildSocialDraggable(ref),
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: _buildSocialDraggable(ref),
+                    ),
                   ),
 
                 // SAĞ ÜST: SİPARİŞ BULUTU
@@ -207,32 +214,28 @@ class CharacterCard extends ConsumerWidget {
     );
   }
 
-  // --- YARDIMCI WIDGETLAR ---
+  // --- YARDIMCI METODLAR ---
 
-  // Sosyallik Dairesi ve Drag-Drop Yönetimi
- // lib/widgets/character_card.dart içinde _buildSocialDraggable metodu:
+  Widget _buildSocialDraggable(WidgetRef ref) {
+    return Draggable<String>(
+      data: character.id,
+      // Eğer zaten konuşuyorsa sürüklenemez
+      maxSimultaneousDrags: character.socializingWith == null ? 1 : 0,
+      feedback: _circleIcon(true),
+      childWhenDragging: Opacity(opacity: 0.3, child: _circleIcon(false)),
+      child: DragTarget<String>(
+        onWillAccept: (incomingId) {
+          // Kendisiyle konuşamaz ve zaten konuşuyorsa yeni bağ kabul edemez
+          return incomingId != character.id && character.socializingWith == null;
+        },
+        onAccept: (incomingId) => ref.read(gameProvider.notifier).startSocializing(incomingId, character.id),
+        builder: (context, candidateData, _) {
+          return _circleIcon(candidateData.isNotEmpty);
+        },
+      ),
+    );
+  }
 
-Widget _buildSocialDraggable(WidgetRef ref) {
-  // Eğer karakter zaten konuşuyorsa sürüklemeyi tamamen devre dışı bırakıyoruz (maxSimultaneousDrags: 0)
-  return Draggable<String>(
-    data: character.id,
-    maxSimultaneousDrags: character.socializingWith == null ? 1 : 0, // Konuşuyorsa sürüklenemez
-    feedback: _circleIcon(true),
-    childWhenDragging: Opacity(opacity: 0.3, child: _circleIcon(false)),
-    child: DragTarget<String>(
-      onWillAccept: (incomingId) {
-        // KONTROL 1: Kendisiyle konuşamaz
-        // KONTROL 2: Kendisi zaten biriyle konuşuyorsa yeni birini kabul edemez
-        return incomingId != character.id && character.socializingWith == null;
-      },
-      onAccept: (incomingId) => ref.read(gameProvider.notifier).startSocializing(incomingId, character.id),
-      builder: (context, candidateData, _) {
-        return _circleIcon(candidateData.isNotEmpty);
-      },
-    ),
-  );
-}
-  // Sosyal Daire İkonu
   Widget _circleIcon(bool highlight) {
     return Container(
       width: 38,
@@ -247,7 +250,6 @@ Widget _buildSocialDraggable(WidgetRef ref) {
     );
   }
 
-  // İlişki İlerleme Barı
   Widget _buildRelationshipBar() {
     String partnerId = character.socializingWith!;
     double relLevel = character.relationships[partnerId] ?? 0.0;
@@ -269,7 +271,6 @@ Widget _buildSocialDraggable(WidgetRef ref) {
     );
   }
 
-  // Sipariş/Aktivite Baloncuğu
   Widget _buildBubble(GameItem item, {bool isDragging = false}) {
     Color color = Colors.white;
     if (item.orderStatus == OrderStatus.pending) color = Colors.yellow[100]!;
