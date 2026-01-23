@@ -42,10 +42,18 @@ final List<ActivityItem> allActivityItems = [
     isInitialUnlocked: true,
   ),
   ActivityItem(
+    type: ItemType.boardGame,
+    name: "Masa Oyunu",
+    icon: "🎲",
+    price: 500,
+    durationMinutes: 500,
+    defaultActivityText: "Oyun oynuyor... ♟️",
+  ),
+  ActivityItem(
     type: ItemType.guitar,
     name: "Gitar",
     icon: "🎸",
-    price: 1000,
+    price: 1500,
     durationMinutes: 45,
     defaultActivityText: "Gitar tellerine dokunuyor... 🎶",
   ),
@@ -53,16 +61,9 @@ final List<ActivityItem> allActivityItems = [
     type: ItemType.paintingKit,
     name: "Resim Seti",
     icon: "🎨",
-    price: 600,
+    price: 900,
     durationMinutes: 50,
     defaultActivityText: "Resim yapıyor... 🖌️",
   ),
-  ActivityItem(
-    type: ItemType.boardGame,
-    name: "Masa Oyunu",
-    icon: "🎲",
-    price: 350,
-    durationMinutes: 40,
-    defaultActivityText: "Oyun oynuyor... ♟️",
-  ),
+  
 ];
