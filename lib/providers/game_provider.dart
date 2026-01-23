@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../models/game_item.dart';
 import '../data/character_presets.dart';
@@ -10,12 +12,14 @@ class GameStateData {
   final List<Character> characters;
   final DateTime gameTime;
   final bool isShopOpen;
-  final int dailyRevenue; // Günlük puan/başarı takibi
+  final int dailyRevenue; 
+  final int dayCount;
 
   GameStateData({
     required this.characters,
     required this.gameTime,
     required this.isShopOpen,
+    this.dayCount = 1,
     this.dailyRevenue = 0,
   });
 
@@ -24,12 +28,14 @@ class GameStateData {
     DateTime? gameTime,
     bool? isShopOpen,
     int? dailyRevenue,
+    int? dayCount,
   }) {
     return GameStateData(
       characters: characters ?? this.characters,
       gameTime: gameTime ?? this.gameTime,
       isShopOpen: isShopOpen ?? this.isShopOpen,
       dailyRevenue: dailyRevenue ?? this.dailyRevenue,
+      dayCount: dayCount ?? this.dayCount,
     );
   }
 }
@@ -39,30 +45,19 @@ class GameNotifier extends Notifier<GameStateData> {
   Timer? _timer;
   final Random _rng = Random();
   int _customerCounter = 1;
-  // XP ekleme ve Level kontrolü yapan yardımcı fonksiyon
- Character _applyXp(Character c, int amount) {
-  int newXp = c.currentXp + amount;
-  int newLevel = c.level;
-  
-  // Seviye atlama kontrolü (Character modelindeki requiredXpForNextLevel'i kullanır)
-  while (newXp >= c.requiredXpForNextLevel) {
-    newXp -= c.requiredXpForNextLevel;
-    newLevel++;
-  }
 
-  return c.copyWith(currentXp: newXp, level: newLevel);
-}
   @override
   GameStateData build() {
     _startTimer();
+    _loadAllData(); // Başlangıçta kaydedilmiş verileri yükle
 
-    // Ana karakterleri preset dosyasından çekiyoruz
     final erenP = allPresets.firstWhere((p) => p.name == "Eren");
     final cinarP = allPresets.firstWhere((p) => p.name == "Çınar");
 
     return GameStateData(
-      gameTime: DateTime(2025, 1, 1, 10, 0), // Sabah 10:00 Hazırlık
+      gameTime: DateTime(2025, 1, 1, 10, 0),
       isShopOpen: false,
+      dayCount: 1,
       characters: [
         Character.fromPreset(erenP, id: 'eren', isPresent: false).copyWith(
           location: "Ev", 
@@ -76,7 +71,65 @@ class GameNotifier extends Notifier<GameStateData> {
     );
   }
 
-  // ZAMAN DÖNGÜSÜ: 1 Saniye = 1 Dakika
+  // --- XP VE LEVEL SİSTEMİ ---
+  Character _applyXp(Character c, int amount) {
+    int newXp = c.currentXp + amount;
+    int newLevel = c.level;
+    
+    // Level up kontrolü
+    while (newXp >= c.requiredXpForNextLevel) {
+      newXp -= c.requiredXpForNextLevel;
+      newLevel++;
+    }
+    return c.copyWith(currentXp: newXp, level: newLevel);
+  }
+
+  // --- VERİ KAYDETME (PERSISTENCE) ---
+  Future<void> _saveAllData() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Karakter ilerlemelerini (Level, XP, Statlar) JSON olarak hazırla
+    final charProgress = state.characters.map((c) => {
+      'id': c.id,
+      'name': c.name,
+      'level': c.level,
+      'currentXp': c.currentXp,
+      'happiness': c.happiness,
+      'success': c.success,
+      'love': c.love,
+    }).toList();
+
+    await prefs.setString('saved_character_progress', jsonEncode(charProgress));
+    await prefs.setInt('game_day_count', state.dayCount);
+    print("SİSTEM: Karakter ilerlemeleri ve gün sayısı kaydedildi.");
+  }
+
+  // --- VERİ YÜKLEME ---
+  Future<void> _loadAllData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedDay = prefs.getInt('game_day_count') ?? 1;
+    final savedCharsJson = prefs.getString('saved_character_progress');
+
+    if (savedCharsJson != null) {
+      final List<dynamic> decoded = jsonDecode(savedCharsJson);
+      List<Character> updatedChars = [...state.characters];
+
+      for (var savedData in decoded) {
+        int idx = updatedChars.indexWhere((c) => c.id == savedData['id']);
+        if (idx != -1) {
+          updatedChars[idx] = updatedChars[idx].copyWith(
+            level: savedData['level'],
+            currentXp: savedData['currentXp'],
+            happiness: savedData['happiness'],
+            success: savedData['success'],
+            love: savedData['love'],
+          );
+        }
+      }
+      state = state.copyWith(dayCount: savedDay, characters: updatedChars);
+    }
+  }
+
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -84,39 +137,44 @@ class GameNotifier extends Notifier<GameStateData> {
     });
   }
 
-  // HER DAKİKA ÇALIŞAN ANA MOTOR
   void _tick() {
-    DateTime newTime = state.gameTime.add(const Duration(minutes: 1));
+    final oldTime = state.gameTime;
+    DateTime newTime = oldTime.add(const Duration(minutes: 1));
     bool isOpen = newTime.hour >= 11 && newTime.hour < 23;
     List<Character> chars = [...state.characters];
+    int currentDay = state.dayCount;
 
-    // --- 1. BARISTA VE ANA KARAKTER RUTİNLERİ ---
+    // Gün değişimi kontrolü (00:00'da gün atlar)
+    if (newTime.day != oldTime.day) {
+      currentDay++;
+    }
+
+    // Gün Sonu Kaydı: Saat 23:00 olduğunda tüm verileri kaydet
+    if (newTime.hour == 23 && newTime.minute == 0) {
+      _saveAllData();
+    }
+
     _handleRoutines(chars, newTime);
 
-    // --- 2. SİPARİŞ VE MÜŞTERİ ZEKSASI (AI) ---
     if (isOpen) {
       _handleSpawning(chars, newTime);
       _handleOrdersAI(chars, newTime);
     }
 
-    // --- 3. KAPANIŞ VE AYRILMA STRATEJİSİ ---
     _handleClosingAI(chars, newTime, isOpen);
-
-    // --- 4. SÜREÇ TAMAMLANMALARI ---
     _handleProcessCompletions(chars, newTime);
 
     state = state.copyWith(
       gameTime: newTime,
       isShopOpen: isOpen,
       characters: chars,
+      dayCount: currentDay,
     );
   }
 
-  // BARİSTA VE ANA KARAKTERLERİN GÜNLÜK HAREKETLERİ
   void _handleRoutines(List<Character> chars, DateTime now) {
     int erenIdx = chars.indexWhere((c) => c.id == 'eren');
     if (erenIdx != -1) {
-      // 10:30'da hazırlığa gelir
       if (now.hour == 10 && now.minute == 30 && !chars[erenIdx].isPresent) {
         chars[erenIdx] = chars[erenIdx].copyWith(
           isPresent: true, 
@@ -124,7 +182,6 @@ class GameNotifier extends Notifier<GameStateData> {
           activity: "Tezgahı siliyor... 🧹"
         );
       }
-      // 11:00'de bar arkasına geçer
       if (now.hour == 11 && now.minute == 0) {
         chars[erenIdx] = chars[erenIdx].copyWith(
           location: "Bar Arkası", 
@@ -134,11 +191,8 @@ class GameNotifier extends Notifier<GameStateData> {
     }
   }
 
-  // MÜŞTERİ GELİŞ-GİDİŞ YÖNETİMİ
   void _handleSpawning(List<Character> chars, DateTime now) {
     int currentCustomers = chars.where((c) => c.id.startsWith('musteri')).length;
-    
-    // Rastgele yeni müşteri (%8 şans)
     if (currentCustomers < 6 && _rng.nextInt(100) < 8) {
       final available = allPresets.where((p) => p.name != "Eren" && p.name != "Çınar").toList();
       final p = available[_rng.nextInt(available.length)];
@@ -155,7 +209,6 @@ class GameNotifier extends Notifier<GameStateData> {
       }
     }
 
-    // Çınar her dakika %2 şansla gelmeyi dener
     int cinarIdx = chars.indexWhere((c) => c.id == 'cinar');
     if (cinarIdx != -1 && !chars[cinarIdx].isPresent && _rng.nextInt(100) < 2) {
       chars[cinarIdx] = chars[cinarIdx].copyWith(
@@ -168,9 +221,7 @@ class GameNotifier extends Notifier<GameStateData> {
     }
   }
 
-  // GELİŞMİŞ SİPARİŞ ZEKSASI
   void _handleOrdersAI(List<Character> chars, DateTime now) {
-    // KURAL: Dükkanda toplamda en fazla 3 sipariş olabilir (Bekleyen + Hazırlanan + Hazır)
     int globalActiveOrders = chars.where((c) => c.activeOrder != null).length;
     if (globalActiveOrders >= 3) return;
 
@@ -179,20 +230,16 @@ class GameNotifier extends Notifier<GameStateData> {
       if (!c.isPresent || c.isBarista || c.activeOrder != null || c.activeActivity != null) continue;
 
       bool wantsToOrder = false;
-
-      // KURAL: İlk sipariş dükkana girdikten 15-30 dk sonra verilmeli
       if (c.lastOrderTime == null) {
         if (c.arrivalTime != null && now.difference(c.arrivalTime!).inMinutes > 20) {
           wantsToOrder = true;
         }
       } else {
-        // KURAL: Her siparişten sonra minimum 2 saat (120 dk) beklenmeli
         if (now.difference(c.lastOrderTime!).inMinutes >= 120) {
           wantsToOrder = true;
         }
       }
 
-      // Kapanışa 30 dk kala yeni sipariş verilmez
       if (now.hour == 22 && now.minute > 30) wantsToOrder = false;
 
       if (wantsToOrder && _rng.nextInt(100) < 10) {
@@ -201,9 +248,7 @@ class GameNotifier extends Notifier<GameStateData> {
     }
   }
 
-  // YAPAY ZEKA: KAPANIŞ VE AYRILMA MANTIĞI
   void _handleClosingAI(List<Character> chars, DateTime now, bool isOpen) {
-    // SAAT 23:00 KURALI: Dükkan kesin kapanır, herkes gider!
     if (now.hour == 23 && now.minute == 0) {
       chars.removeWhere((c) => c.id.startsWith('musteri'));
       for (int i = 0; i < chars.length; i++) {
@@ -215,78 +260,40 @@ class GameNotifier extends Notifier<GameStateData> {
           clearActivity: true
         );
       }
-      return;
-    }
-
-    // SAAT 22:00'DEN SONRA: Müşteriler yavaş yavaş gitmeye başlar
-    if (now.hour == 22) {
-      for (int i = 0; i < chars.length; i++) {
-        Character c = chars[i];
-        if (!c.isPresent || c.isBarista) continue;
-
-        // KURAL: Siparişi varsa ASLA almadan gitmez (23:00'e kadar bekler)
-        if (c.activeOrder == null && c.activeActivity == null) {
-          // Süresi dolmuşsa veya %15 şansla erken gitmek istiyorsa
-          if ((c.departureTime != null && now.isAfter(c.departureTime!)) || _rng.nextInt(100) < 15) {
-            _sendHome(chars, i);
-            i--;
-          }
-        }
-      }
-    }
-
-    // GÜN İÇİNDE NORMAL AYRILMA
-    if (isOpen) {
-      for (int i = 0; i < chars.length; i++) {
-        Character c = chars[i];
-        if (c.isPresent && !c.isBarista && c.departureTime != null && now.isAfter(c.departureTime!)) {
-          // Sadece işi bittiyse gider
-          if (c.activeOrder == null && c.activeActivity == null) {
-            _sendHome(chars, i);
-            i--;
-          }
-        }
-      }
     }
   }
 
-  // SÜREÇLERİN BİTİŞ KONTROLLERİ
   void _handleProcessCompletions(List<Character> chars, DateTime now) {
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
 
-      // Barista kahveyi bitirdi mi?
       if (c.orderFinishTime != null && now.isAfter(c.orderFinishTime!)) {
         if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
-  // Barista için 40 XP ve 0.05 Başarı puanı ekle
-  Character updatedEren = _applyXp(c, 40); 
-  chars[i] = updatedEren.copyWith(
-    activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready),
-    activity: "Servis Hazır! 🔔",
-    success: c.success + 0.05, // Başarı barını yükselt
-    orderFinishTime: null,
-  );
-}
+          // Barista başarısı ve XP
+          chars[i] = _applyXp(c, 40).copyWith(
+            activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready),
+            activity: "Servis Hazır! 🔔",
+            success: (c.success + 0.05).clamp(0.0, 1.0),
+            orderFinishTime: null,
+          );
+        }
       }
 
-      // Aktivite bitti mi?
       if (c.activityFinishTime != null && now.isAfter(c.activityFinishTime!)) {
-  final preset = allPresets.firstWhere((p) => p.name == c.name, orElse: () => allPresets[0]);
-  final m = preset.multipliers[c.activeActivity!.type] ?? {'xp': 25, 'happiness': 0.05};
-  
-  // Aktiviteye göre özel XP ve Mutluluk/Başarı artışı
-  Character finishedChar = _applyXp(c, m['xp']?.toInt() ?? 30);
-  chars[i] = finishedChar.copyWith(
-    activity: "İşini bitirdi ✅",
-    happiness: c.happiness + (m['happiness'] ?? 0.05),
-    success: c.success + (m['success'] ?? 0.02),
-    clearActivity: true,
-  );
-}
+        final preset = allPresets.firstWhere((p) => p.name == c.name, orElse: () => allPresets[0]);
+        final m = preset.multipliers[c.activeActivity!.type] ?? {'xp': 25, 'happiness': 0.05};
+        
+        // Aktivite XP ve Mutluluk
+        chars[i] = _applyXp(c, m['xp']?.toInt() ?? 30).copyWith(
+          activity: "İşini bitirdi ✅",
+          happiness: (c.happiness + (m['happiness'] ?? 0.05)).clamp(0.0, 1.0),
+          success: (c.success + (m['success'] ?? 0.02)).clamp(0.0, 1.0),
+          clearActivity: true,
+        );
+      }
     }
   }
 
-  // YARDIMCI: SİPARİŞ TETİKLEME
   Character _triggerNewOrder(Character c, DateTime now) {
     final drinks = [
       {'name': 'Filtre Kahve', 'type': ItemType.filterCoffee},
@@ -308,22 +315,6 @@ class GameNotifier extends Notifier<GameStateData> {
     );
   }
 
-  // YARDIMCI: EVE GÖNDERME
-  void _sendHome(List<Character> list, int index) {
-    if (list[index].id.startsWith('musteri')) {
-      list.removeAt(index);
-    } else {
-      list[index] = list[index].copyWith(
-        isPresent: false, 
-        location: "Ev", 
-        activity: "Gitti", 
-        clearOrder: true, 
-        clearActivity: true
-      );
-    }
-  }
-
-  // --- UI'DAN ÇAĞRILAN: EŞYA TESLİMATI ---
   void giveItemToCharacter(String charId, GameItem item) {
     List<Character> updated = [...state.characters];
     int idx = updated.indexWhere((c) => c.id == charId);
@@ -331,41 +322,33 @@ class GameNotifier extends Notifier<GameStateData> {
     Character target = updated[idx];
     final preset = allPresets.firstWhere((p) => p.name == target.name, orElse: () => allPresets[0]);
 
-    // 1. AKTİVİTE TEPKİSİ
     if (item.type == ItemType.laptop || item.type == ItemType.book) {
       if (target.activeActivity != null) return;
-      
-      // PRESET TEPKİSİ: Dosyadan çek, yoksa varsayılan kullan
-      String reaction = preset.activityTexts[item.type] ?? (item.type == ItemType.laptop ? "Laptop başında..." : "Kitap okuyor...");
+      String reaction = preset.activityTexts[item.type] ?? "Çalışıyor...";
 
       updated[idx] = target.copyWith(
         activity: reaction,
         activityFinishTime: state.gameTime.add(Duration(minutes: item.type == ItemType.laptop ? 60 : 30)),
         activeActivity: item.copyWith(orderStatus: OrderStatus.processing),
       );
-    } 
-    // 2. SİPARİŞ YÖNETİMİ
-    else {
-      // Barista Siparişi Alır
+    } else {
       if (target.isBarista && item.orderStatus == OrderStatus.pending && target.activeOrder == null) {
         updated[idx] = target.copyWith(
           activeOrder: item.copyWith(orderStatus: OrderStatus.preparing),
-          activity: "${item.name} hazırlıyor... (5dk)",
+          activity: "${item.name} hazırlıyor...",
           orderFinishTime: state.gameTime.add(const Duration(minutes: 5)),
         );
         int cIdx = updated.indexWhere((c) => c.id == item.relatedCustomerId);
         if (cIdx != -1) updated[cIdx] = updated[cIdx].copyWith(activity: "Bekliyor...", activeOrder: item.copyWith(orderStatus: OrderStatus.processing));
-      } 
-      // Müşteri Kahvesini Alır
-      else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
-  // Kahve içen müşteriye 50 XP ve 0.1 Mutluluk ekle
-  Character happyChar = _applyXp(target, 50);
-  updated[idx] = happyChar.copyWith(
-    clearOrder: true,
-    activity: "Keyfi yerinde ☕",
-    lastOrderTime: state.gameTime, // 2 saatlik bekleme süresini başlatır
-    happiness: target.happiness + 0.1, // Mutluluk barını yükselt
-  );
+      } else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
+        // Kahve tesliminde XP ve Mutluluk
+        Character happyChar = _applyXp(target, 50);
+        updated[idx] = happyChar.copyWith(
+          clearOrder: true,
+          activity: "Keyfi yerinde ☕",
+          lastOrderTime: state.gameTime,
+          happiness: (target.happiness + 0.1).clamp(0.0, 1.0),
+        );
         int bIdx = updated.indexWhere((c) => c.isBarista);
         if (bIdx != -1) updated[bIdx] = updated[bIdx].copyWith(clearOrder: true, activity: "Sipariş Bekliyor");
       }
