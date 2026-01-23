@@ -16,7 +16,7 @@ class CharacterCard extends ConsumerWidget {
     double opacity = character.isPresent ? 1.0 : 0.4;
     bool isSocializing = character.socializingWith != null;
 
-    // 20 DAKİKALIK BEKLEME KONTROLÜ (Kırmızı Kenarlık İçin)
+    // 20 DAKİKALIK BEKLEME KONTROLÜ (Kırmızı Kenarlık)
     bool isWaitingTooLong = false;
     if (character.activeOrder?.orderStatus == OrderStatus.pending && 
         character.arrivalTime != null) {
@@ -28,22 +28,18 @@ class CharacterCard extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // --- KATMAN 1: EŞYA TESLİMİ İÇİN GENEL DRAG TARGET ---
         return DragTarget<GameItem>(
           onWillAccept: (incomingItem) {
             if (!character.isPresent || incomingItem == null) return false;
             
-            // Barista Kontrolü
             if (character.isBarista) {
               if (incomingItem.orderStatus == OrderStatus.pending) {
                 return character.activeOrder == null;
               }
             }
-            // Müşteri Kendi Siparişi Kontrolü
             if (!character.isBarista && incomingItem.relatedCustomerId == character.id) {
               if (incomingItem.orderStatus == OrderStatus.ready) return true;
             }
-            // Genel Aktivite Eşyaları
             if (incomingItem.type == ItemType.laptop || incomingItem.type == ItemType.book) {
               return character.activeActivity == null;
             }
@@ -54,11 +50,11 @@ class CharacterCard extends ConsumerWidget {
           },
           builder: (context, candidateData, rejectedData) {
             return Stack(
-              clipBehavior: Clip.none, // Baloncukların dışarı taşması için
+              clipBehavior: Clip.none, 
               children: [
                 // --- ANA KART ---
                 Padding(
-                  padding: const EdgeInsets.all(12.0), // Daire ve balonlar için boşluk
+                  padding: const EdgeInsets.all(12.0), 
                   child: GestureDetector(
                     onTap: () {
                       Navigator.push(
@@ -71,7 +67,7 @@ class CharacterCard extends ConsumerWidget {
                       child: Card(
                         elevation: candidateData.isNotEmpty ? 10 : 6,
                         color: candidateData.isNotEmpty 
-                            ? Colors.green[100] 
+                            ? Colors.green[50] 
                             : (rejectedData.isNotEmpty ? Colors.red[50] : Colors.white),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
@@ -81,9 +77,7 @@ class CharacterCard extends ConsumerWidget {
                           ),
                         ),
                         child: Container(
-                          width: constraints.maxWidth,
-                          height: constraints.maxHeight,
-                          padding: const EdgeInsets.only(top: 22, left: 10, right: 10, bottom: 10),
+                          padding: const EdgeInsets.only(top: 25, left: 10, right: 10, bottom: 10),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -93,11 +87,10 @@ class CharacterCard extends ConsumerWidget {
                                 decoration: BoxDecoration(
                                   color: Colors.blue[50], 
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.blue[100]!),
                                 ),
                                 child: Text(
                                   character.location, 
-                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blue), 
+                                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue), 
                                   overflow: TextOverflow.ellipsis
                                 ),
                               ),
@@ -113,7 +106,7 @@ class CharacterCard extends ConsumerWidget {
                               // İsim & Aktivite
                               Column(
                                 children: [
-                                  Text(character.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                  Text(character.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   Text(
                                     character.activity, 
                                     textAlign: TextAlign.center, 
@@ -124,29 +117,9 @@ class CharacterCard extends ConsumerWidget {
                                 ],
                               ),
                               
-                              // İLİŞKİ BARI (Sosyalleşirken Görünür)
-                              if (isSocializing)
-                                _buildRelationshipBar(),
-
-                              const SizedBox(height: 5),
-                              
-                              // XP / Level Barı
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("Lvl ${character.level}", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey[700])),
-                                  const SizedBox(height: 2),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: LinearProgressIndicator(
-                                      value: (character.currentXp / character.requiredXp).clamp(0.0, 1.0),
-                                      backgroundColor: Colors.grey[200], 
-                                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange), 
-                                      minHeight: 6,
-                                    ),
-                                  ),
-                                ],
-                              )
+                              if (isSocializing) _buildRelationshipBar(),
+                              const SizedBox(height: 4),
+                              _buildXpBar(),
                             ],
                           ),
                         ),
@@ -155,7 +128,7 @@ class CharacterCard extends ConsumerWidget {
                   ),
                 ),
                 
-                // --- SOSYALLİK DAİRESİ (Üst-Orta Konum) ---
+                // --- SOSYALLİK DAİRESİ (Üst-Orta) ---
                 if (character.isPresent)
                   Positioned(
                     top: 0,
@@ -166,15 +139,23 @@ class CharacterCard extends ConsumerWidget {
                     ),
                   ),
 
+                // --- DÜŞÜNCE BULUTU ---
+                if (character.activeThought != null && character.isPresent)
+                  Positioned(
+                    top: -45,
+                    left: -10,
+                    right: -10,
+                    child: _buildThoughtBubble(),
+                  ),
+
                 // SAĞ ÜST: SİPARİŞ BULUTU
                 if (character.activeOrder != null && character.isPresent)
                   Positioned(
                     right: 0, 
-                    top: 0,
+                    top: 5,
                     child: Draggable<GameItem>(
                       data: character.activeOrder,
                       feedback: _buildBubble(character.activeOrder!, isDragging: true),
-                      childWhenDragging: Opacity(opacity: 0.2, child: _buildBubble(character.activeOrder!)),
                       child: _buildBubble(character.activeOrder!),
                     ),
                   ),
@@ -183,27 +164,11 @@ class CharacterCard extends ConsumerWidget {
                 if (character.activeActivity != null && character.isPresent)
                   Positioned(
                     left: 0, 
-                    top: 0,
+                    top: 5,
                     child: Draggable<GameItem>(
                       data: character.activeActivity,
                       feedback: _buildBubble(character.activeActivity!, isDragging: true),
-                      childWhenDragging: Opacity(opacity: 0.2, child: _buildBubble(character.activeActivity!)),
                       child: _buildBubble(character.activeActivity!),
-                    ),
-                  ),
-
-                // GECİKME UYARISI
-                if (isWaitingTooLong && character.isPresent)
-                  Positioned(
-                    left: 15,
-                    bottom: 55,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.priority_high, color: Colors.white, size: 18),
                     ),
                   ),
               ],
@@ -214,85 +179,149 @@ class CharacterCard extends ConsumerWidget {
     );
   }
 
-  // --- YARDIMCI METODLAR ---
-
-  Widget _buildSocialDraggable(WidgetRef ref) {
-    return Draggable<String>(
-      data: character.id,
-      // Eğer zaten konuşuyorsa sürüklenemez
-      maxSimultaneousDrags: character.socializingWith == null ? 1 : 0,
-      feedback: _circleIcon(true),
-      childWhenDragging: Opacity(opacity: 0.3, child: _circleIcon(false)),
-      child: DragTarget<String>(
-        onWillAccept: (incomingId) {
-          // Kendisiyle konuşamaz ve zaten konuşuyorsa yeni bağ kabul edemez
-          return incomingId != character.id && character.socializingWith == null;
-        },
-        onAccept: (incomingId) => ref.read(gameProvider.notifier).startSocializing(incomingId, character.id),
-        builder: (context, candidateData, _) {
-          return _circleIcon(candidateData.isNotEmpty);
-        },
-      ),
-    );
-  }
-
-  Widget _circleIcon(bool highlight) {
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: character.socializingWith != null ? Colors.pink[300] : (highlight ? Colors.green : Colors.blueAccent),
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
-      ),
-      child: const Icon(Icons.people, color: Colors.white, size: 20),
-    );
-  }
-
-  Widget _buildRelationshipBar() {
-    String partnerId = character.socializingWith!;
+  // --- RENK MANTIĞI GÜNCELLENMİŞ BULONCUK ---
+  Widget _buildBubble(GameItem item, {bool isDragging = false}) {
+    Color bubbleColor = Colors.white;
     
-    double relLevel = character.relationships[partnerId] ?? 0.0;
+    // 1. SİPARİŞ ALINMAMIŞ (BEKLİYOR) -> SARI
+    if (item.orderStatus == OrderStatus.pending) {
+      bubbleColor = Colors.yellow[100]!;
+    } 
+    // 2. HAZIRLANIYOR VEYA AKTİVİTE YAPILIYOR -> MAVİ
+    else if (item.orderStatus == OrderStatus.preparing || 
+             item.orderStatus == OrderStatus.processing) {
+      bubbleColor = Colors.blue[100]!;
+    } 
+    // 3. TAMAMLANDI (HAZIR) -> YEŞİL
+    else if (item.orderStatus == OrderStatus.ready) {
+      bubbleColor = Colors.green[100]!;
+    }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 42,
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: bubbleColor, 
+          shape: BoxShape.circle,
+          boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
+          border: Border.all(color: Colors.brown[300]!, width: 1.5),
+        ),
+        child: Text(item.iconAsset, style: TextStyle(fontSize: isDragging ? 28 : 20)),
+      ),
+    );
+  }
+
+  Widget _buildThoughtBubble() {
+    return Center(
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text("Bağ: %${(relLevel * 100).toInt()}", style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.pink)),
-          const SizedBox(height: 2),
-          LinearProgressIndicator(
-            value: relLevel,
-            backgroundColor: Colors.pink[50],
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.pink[300]!),
-            minHeight: 3,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            constraints: const BoxConstraints(maxWidth: 140),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+              border: Border.all(color: Colors.brown[100]!, width: 1),
+            ),
+            child: Text(
+              character.activeThought!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.black87),
+            ),
+          ),
+          CustomPaint(
+            size: const Size(15, 10),
+            painter: TrianglePainter(color: Colors.white, borderColor: Colors.brown[100]!),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBubble(GameItem item, {bool isDragging = false}) {
-    Color color = Colors.white;
-    if (item.orderStatus == OrderStatus.pending) color = Colors.yellow[100]!;
-    if (item.orderStatus == OrderStatus.processing) color = Colors.blue[100]!;
-    if (item.orderStatus == OrderStatus.preparing) color = Colors.grey[300]!;
-    if (item.orderStatus == OrderStatus.ready) color = Colors.green[100]!;
-
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: 46,
-        height: 46,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: color, 
-          shape: BoxShape.circle,
-          boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26, offset: Offset(0, 2))],
-          border: Border.all(color: Colors.brown, width: 1.5),
+  Widget _buildXpBar() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("Lvl ${character.level}", style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.grey)),
+        const SizedBox(height: 2),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: (character.currentXp / character.requiredXp).clamp(0.0, 1.0),
+            backgroundColor: Colors.grey[200], 
+            valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange), 
+            minHeight: 5,
+          ),
         ),
-        child: Text(item.iconAsset, style: TextStyle(fontSize: isDragging ? 30 : 22)),
+      ],
+    );
+  }
+
+  Widget _buildSocialDraggable(WidgetRef ref) {
+    return Draggable<String>(
+      data: character.id,
+      maxSimultaneousDrags: character.socializingWith == null ? 1 : 0,
+      feedback: _circleIcon(true),
+      childWhenDragging: Opacity(opacity: 0.3, child: _circleIcon(false)),
+      child: DragTarget<String>(
+        onWillAccept: (incomingId) => incomingId != character.id && character.socializingWith == null,
+        onAccept: (incomingId) => ref.read(gameProvider.notifier).startSocializing(incomingId, character.id),
+        builder: (context, candidateData, _) => _circleIcon(candidateData.isNotEmpty),
       ),
     );
   }
+
+  Widget _circleIcon(bool highlight) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: character.socializingWith != null ? Colors.pink[300] : (highlight ? Colors.green : Colors.blueAccent),
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
+      ),
+      child: const Icon(Icons.people, color: Colors.white, size: 18),
+    );
+  }
+
+  Widget _buildRelationshipBar() {
+    final partnerId = character.socializingWith!;
+    double relLevel = character.relationships[partnerId] ?? 0.0;
+    return Column(
+      children: [
+        Text("Bağ: %${(relLevel * 100).toInt()}", style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.pink)),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: relLevel,
+            backgroundColor: Colors.pink[50],
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.pink[300]!),
+            minHeight: 3,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class TrianglePainter extends CustomPainter {
+  final Color color;
+  final Color borderColor;
+  TrianglePainter({required this.color, required this.borderColor});
+  @override
+  void paint(Canvas canvas, Size size) {
+    var paint = Paint()..color = color;
+    var path = Path();
+    path.moveTo(0, 0); path.lineTo(size.width / 2, size.height); path.lineTo(size.width, 0); path.close();
+    canvas.drawPath(path, paint);
+    canvas.drawPath(path, Paint()..color = borderColor..style = PaintingStyle.stroke..strokeWidth = 1);
+  }
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
