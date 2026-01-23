@@ -23,6 +23,8 @@ class Character {
   final DateTime? activityFinishTime;
   final DateTime? arrivalTime;
   final DateTime? departureTime;
+  final Map<String, double> relationships; // charId -> ilişki seviyesi (0.0 - 1.0)
+  final String? socializingWith;
 
   Character({
     required this.id, required this.name, required this.description, required this.imagePath,
@@ -32,7 +34,8 @@ class Character {
     this.isPresent = false, this.isBarista = false,
     this.activeOrder, this.orderFinishTime, this.lastOrderTime,
     this.activeActivity, this.activityFinishTime,
-    this.arrivalTime, this.departureTime,
+    this.arrivalTime, this.departureTime,this.relationships = const {},
+    this.socializingWith,
   });
 
   // XP Mantığı: 100, 250, 450... şeklinde artan zorluk
@@ -53,7 +56,7 @@ class Character {
   Map<String, dynamic> toJson() {
     return {
       'id': id, 'name': name, 'level': level, 'currentXp': currentXp,
-      'happiness': happiness, 'success': success, 'love': love,
+      'happiness': happiness, 'success': success, 'love': love,'relationships': relationships,
     };
   }
 
@@ -79,7 +82,9 @@ factory Character.fromPreset(CharacterPreset preset, {required String id, bool i
     GameItem? activeOrder, DateTime? orderFinishTime, DateTime? lastOrderTime,
     GameItem? activeActivity, DateTime? activityFinishTime,
     DateTime? arrivalTime, DateTime? departureTime,
-    bool? clearOrder, bool? clearActivity,
+    bool? clearOrder, bool? clearActivity,Map<String, double>? relationships,
+    String? socializingWith,
+    bool clearSocial = false,
   }) {
     return Character(
       id: id, name: name, description: description, imagePath: imagePath,
@@ -95,7 +100,8 @@ factory Character.fromPreset(CharacterPreset preset, {required String id, bool i
       activeActivity: (clearActivity == true) ? null : (activeActivity ?? this.activeActivity),
       activityFinishTime: (clearActivity == true) ? null : (activityFinishTime ?? this.activityFinishTime),
       arrivalTime: arrivalTime ?? this.arrivalTime,
-      departureTime: departureTime ?? this.departureTime,
+      departureTime: departureTime ?? this.departureTime,relationships: relationships ?? this.relationships,
+      socializingWith: clearSocial ? null : (socializingWith ?? this.socializingWith),
     );
   }
 }

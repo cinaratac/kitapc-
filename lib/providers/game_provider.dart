@@ -206,12 +206,24 @@ class GameNotifier extends Notifier<GameStateData> {
   }
 
   void _handleOrdersAI(List<Character> chars, DateTime now) {
+    // KONTROL: Dükkanda halihazırda sipariş bekleyen müdavim sayısını bul
+    int currentOrdersCount = chars.where((c) => c.activeOrder != null).length;
+
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
-      if (!c.isPresent || c.isBarista || c.activeOrder != null || c.activeActivity != null) continue;
+      
+      // Temel kontroller: Dükkanda mı, meşgul mü?
+      if (!c.isPresent || c.isBarista || c.activeOrder != null || c.activeActivity != null || c.socializingWith != null) continue;
+
+      // SINIRLAMA: Aynı anda dükkanda en fazla 3 müdavim sipariş aşamasında olabilir
+      if (currentOrdersCount >= 3) break;
+
       if ((c.lastOrderTime == null && c.arrivalTime != null && now.difference(c.arrivalTime!).inMinutes > 15) || 
           (c.lastOrderTime != null && now.difference(c.lastOrderTime!).inMinutes >= 90)) {
-        if (_rng.nextInt(100) < 10) chars[i] = _triggerNewOrder(c, now);
+        if (_rng.nextInt(100) < 10) {
+          chars[i] = _triggerNewOrder(c, now);
+          currentOrdersCount++; // Sayacı artır ki 3 sınırını aşmayalım
+        }
       }
     }
   }
@@ -219,8 +231,26 @@ class GameNotifier extends Notifier<GameStateData> {
   void _handleCirculationAI(List<Character> chars, DateTime now) {
     for (int i = 0; i < chars.length; i++) {
       if (!chars[i].isPresent || chars[i].isBarista) continue;
-      if (chars[i].departureTime != null && now.isAfter(chars[i].departureTime!) && chars[i].activeOrder == null && chars[i].activeActivity == null) {
-        chars[i] = chars[i].copyWith(isPresent: false, location: "Ev", activity: "Eve döndü 🏡", clearOrder: true, clearActivity: true);
+
+      // AYRILMA ŞARTLARI:
+      // 1. Gitme zamanı gelmiş olmalı
+      bool isDepartureTime = chars[i].departureTime != null && now.isAfter(chars[i].departureTime!);
+      // 2. Sosyalleşme (bağ kurma) aşamasında OLMAMALI
+      bool isSocializing = chars[i].socializingWith != null;
+      // 3. Sipariş sürecinde OLMAMALI
+      bool hasActiveOrder = chars[i].activeOrder != null;
+      // 4. Aktivite (Laptop/Kitap) yapıyor OLMAMALI
+      bool hasActiveActivity = chars[i].activeActivity != null;
+
+      if (isDepartureTime && !isSocializing && !hasActiveOrder && !hasActiveActivity) {
+        chars[i] = chars[i].copyWith(
+          isPresent: false, 
+          location: "Ev", 
+          activity: "Eve döndü 🏡", 
+          clearOrder: true, 
+          clearActivity: true,
+          clearSocial: true
+        );
       }
     }
   }
@@ -228,17 +258,55 @@ class GameNotifier extends Notifier<GameStateData> {
   void _handleProcessCompletions(List<Character> chars, DateTime now) {
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
+
+      // 1. Sipariş (Barista) Kontrolü
       if (c.orderFinishTime != null && now.isAfter(c.orderFinishTime!)) {
         if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
-          chars[i] = _applyXp(c, 40).copyWith(activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready), activity: "Servis Hazır! 🔔", success: (c.success + 0.05).clamp(0.0, 1.0), orderFinishTime: null);
+          chars[i] = _applyXp(c, 40).copyWith(
+            activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready),
+            activity: "Servis Hazır! 🔔",
+            success: (c.success + 0.05).clamp(0.0, 1.0),
+            orderFinishTime: null,
+          );
         }
       }
+
+      // 2. Aktivite Kontrolü (Laptop/Kitap VEYA Sosyalleşme)
       if (c.activityFinishTime != null && now.isAfter(c.activityFinishTime!)) {
-        final preset = allPresets.firstWhere((p) => p.name == c.name);
-        final m = preset.multipliers[c.activeActivity!.type] ?? {'xp': 30, 'happiness': 0.05};
-        chars[i] = _applyXp(c, m['xp']?.toInt() ?? 30).copyWith(activity: "İşini bitirdi ✅", happiness: (c.happiness + (m['happiness'] ?? 0.05)).clamp(0.0, 1.0), success: (c.success + (m['success'] ?? 0.02)).clamp(0.0, 1.0), clearActivity: true);
+        if (c.socializingWith != null) {
+          _finishSocializing(chars, i);
+        } else if (c.activeActivity != null) {
+          final preset = allPresets.firstWhere((p) => p.name == c.name);
+          final m = preset.multipliers[c.activeActivity!.type] ?? {'xp': 30, 'happiness': 0.05};
+          
+          chars[i] = _applyXp(c, (m['xp'] as num).toInt()).copyWith(
+            activity: "İşini bitirdi ✅",
+            happiness: (c.happiness + (m['happiness'] as num)).clamp(0.0, 1.0),
+            success: (c.success + (m['success'] as num? ?? 0.02)).clamp(0.0, 1.0),
+            clearActivity: true,
+            activityFinishTime: null,
+          );
+        }
       }
     }
+  }
+
+  void _finishSocializing(List<Character> chars, int idx) {
+    final char = chars[idx];
+    if (char.socializingWith == null) return;
+
+    String partnerId = char.socializingWith!;
+    Map<String, double> newRels = Map.from(char.relationships);
+    double currentRel = newRels[partnerId] ?? 0.0;
+    newRels[partnerId] = (currentRel + 0.1).clamp(0.0, 1.0);
+
+    chars[idx] = char.copyWith(
+      relationships: newRels,
+      activity: "Güzel bir sohbetti 😊",
+      clearSocial: true,
+      clearActivity: true,
+      activityFinishTime: null,
+    );
   }
 
   // --- GENEL MÜŞTERİ MANTIĞI ---
@@ -286,7 +354,25 @@ class GameNotifier extends Notifier<GameStateData> {
     state = state.copyWith(characters: updated);
   }
 
-  // --- YARDIMCI METOTLAR (SADECE BİRER KEZ TANIMLI) ---
+  void startSocializing(String char1Id, String char2Id) {
+    if (char1Id == char2Id) return;
+    List<Character> updated = [...state.characters];
+    int idx1 = updated.indexWhere((c) => c.id == char1Id);
+    int idx2 = updated.indexWhere((c) => c.id == char2Id);
+
+    if (idx1 != -1 && idx2 != -1) {
+      if (updated[idx1].socializingWith != null || updated[idx2].socializingWith != null) return; 
+
+      if (updated[idx1].isPresent && updated[idx2].isPresent) {
+        final finishTime = state.gameTime.add(const Duration(minutes: 30));
+        updated[idx1] = updated[idx1].copyWith(socializingWith: char2Id, activity: "${updated[idx2].name} ile sohbet ediyor... 💬", activityFinishTime: finishTime);
+        updated[idx2] = updated[idx2].copyWith(socializingWith: char1Id, activity: "${updated[idx1].name} ile sohbet ediyor... 💬", activityFinishTime: finishTime);
+        state = state.copyWith(characters: updated);
+      }
+    }
+  }
+
+  // --- YARDIMCI METOTLAR ---
   void _updateSlotInList(int id, Customer? c, List<SeatSlot> t, List<SeatSlot> b, List<SeatSlot> s) {
     int idx = t.indexWhere((s) => s.id == id);
     if (idx != -1) { t[idx] = t[idx].copyWith(customer: c); return; }
@@ -309,7 +395,7 @@ class GameNotifier extends Notifier<GameStateData> {
   }
 
   void _clearShopForNextDay(List<Character> c, List<SeatSlot> t, List<SeatSlot> b, List<SeatSlot> s) {
-    for (int i = 0; i < c.length; i++) c[i] = c[i].copyWith(isPresent: false, location: "Ev", activity: "Uyuyor", clearOrder: true, clearActivity: true);
+    for (int i = 0; i < c.length; i++) c[i] = c[i].copyWith(isPresent: false, location: "Ev", activity: "Uyuyor", clearOrder: true, clearActivity: true, clearSocial: true);
     _clearGenericCustomers(t, b, s);
   }
 
@@ -333,7 +419,22 @@ class GameNotifier extends Notifier<GameStateData> {
       List<Character> updatedChars = [...state.characters];
       for (var savedData in decoded) {
         int idx = updatedChars.indexWhere((c) => c.id == savedData['id']);
-        if (idx != -1) updatedChars[idx] = updatedChars[idx].copyWith(level: savedData['level'], currentXp: savedData['currentXp'], happiness: savedData['happiness'], success: savedData['success'], love: savedData['love']);
+        if (idx != -1) {
+          Map<String, double> loadedRels = {};
+          if (savedData['relationships'] != null) {
+            (savedData['relationships'] as Map<String, dynamic>).forEach((key, value) {
+              loadedRels[key] = (value as num).toDouble();
+            });
+          }
+          updatedChars[idx] = updatedChars[idx].copyWith(
+            level: savedData['level'],
+            currentXp: savedData['currentXp'],
+            happiness: savedData['happiness'],
+            success: savedData['success'],
+            love: savedData['love'],
+            relationships: loadedRels,
+          );
+        }
       }
       state = state.copyWith(dayCount: prefs.getInt('game_day_count') ?? 1, characters: updatedChars);
     }

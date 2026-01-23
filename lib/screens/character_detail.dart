@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/character.dart';
+import '../providers/game_provider.dart';
 
-class CharacterDetailScreen extends StatelessWidget {
+class CharacterDetailScreen extends ConsumerWidget {
   final Character character;
 
   const CharacterDetailScreen({Key? key, required this.character}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Diğer karakterlerin bilgilerine (resim vb.) erişmek için listeyi alıyoruz
+    final allCharacters = ref.watch(gameProvider).characters;
+
+    // Bağ kurulan kişileri en yüksek puandan en düşüğe doğru sıralıyoruz
+    final sortedRelations = character.relationships.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
     return Scaffold(
       appBar: AppBar(
         title: Text(character.name),
@@ -51,7 +60,7 @@ class CharacterDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- YENİ EKLENEN: AÇIKLAMA BÖLÜMÜ ---
+                  // --- HAKKINDA BÖLÜMÜ ---
                   const Text(
                     "Hakkında",
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.brown),
@@ -66,27 +75,25 @@ class CharacterDetailScreen extends StatelessWidget {
                       border: Border.all(color: Colors.brown[100]!),
                     ),
                     child: Text(
-                      character.description, // Modeldeki açıklama burada gösterilir
+                      character.description,
                       style: TextStyle(fontSize: 15, color: Colors.grey[800], height: 1.5),
                     ),
                   ),
                   const SizedBox(height: 24),
 
-                  // İstatistikler Başlığı
+                  // --- KARAKTER DURUMU (İstatistikler) ---
                   const Text(
                     "Karakter Durumu",
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.brown),
                   ),
                   const SizedBox(height: 16),
-
-                  // İstatistik Kartları
                   _buildStatRow("Mutluluk", character.happiness, Colors.orange),
                   _buildStatRow("Başarı", character.success, Colors.blue),
                   _buildStatRow("Sevgi", character.love, Colors.red),
                   
                   const SizedBox(height: 24),
                   
-                  // Level ve XP Bilgisi
+                  // Seviye ve XP Bilgisi
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -104,6 +111,84 @@ class CharacterDetailScreen extends StatelessWidget {
                       valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
                     ),
                   ),
+
+                  const SizedBox(height: 32),
+                  const Divider(),
+
+                  // --- ARKADAŞLAR & BAĞLAR BÖLÜMÜ ---
+                  const Row(
+                    children: [
+                      Icon(Icons.people, color: Colors.pink),
+                      SizedBox(width: 8),
+                      Text(
+                        "Arkadaşlar & Bağlar",
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.brown),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (sortedRelations.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        "Henüz kimseyle bağ kurmamış...",
+                        style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  else
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: sortedRelations.length,
+                      itemBuilder: (context, index) {
+                        final relEntry = sortedRelations[index];
+                        // Arkadaşın ID'sinden tüm bilgilerini buluyoruz
+                        final friend = allCharacters.firstWhere((c) => c.id == relEntry.key);
+                        final int bondPercent = (relEntry.value * 100).toInt();
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.pink[50]!),
+                          ),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.brown[50],
+                              backgroundImage: friend.imagePath.isNotEmpty ? AssetImage(friend.imagePath) : null,
+                              child: friend.imagePath.isEmpty ? const Icon(Icons.person) : null,
+                            ),
+                            title: Text(friend.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(friend.title, style: const TextStyle(fontSize: 10)),
+                                const SizedBox(height: 4),
+                                LinearProgressIndicator(
+                                  value: relEntry.value,
+                                  backgroundColor: Colors.pink[50],
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.pink[300]!),
+                                  minHeight: 4,
+                                ),
+                              ],
+                            ),
+                            trailing: Text(
+                              "%$bondPercent",
+                              style: const TextStyle(color: Colors.pink, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
