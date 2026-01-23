@@ -6,6 +6,7 @@ import '../widgets/item_card.dart';
 import '../widgets/day_summary_overlay.dart';
 import '../models/game_item.dart';
 import '../models/character.dart';
+import '../data/activity_items_data.dart'; // Aktivite verilerini içeren dosya
 
 // --- SOSYAL BAĞLANTI ÇİZGİLERİNİ ÇİZEN RESSAM ---
 class SocialLinePainter extends CustomPainter {
@@ -47,16 +48,12 @@ class _GameBoardState extends ConsumerState<GameBoard> {
   final PageController _pageController = PageController();
   final Map<String, GlobalKey> _cardKeys = {};
 
-  final List<GameItem> menuItems = [
-    GameItem(id: 'menu_laptop', name: "Laptop", type: ItemType.laptop),
-    GameItem(id: 'menu_book', name: "Kitap", type: ItemType.book),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameProvider);
     final presentCharacters = gameState.characters.where((c) => c.isPresent).toList();
 
+    // Karakterleri sayfalara böl (Her sayfada 4 karakter)
     List<List<Character>> characterPages = [];
     for (int i = 0; i < presentCharacters.length; i += 4) {
       characterPages.add(presentCharacters.sublist(
@@ -73,7 +70,7 @@ class _GameBoardState extends ConsumerState<GameBoard> {
           children: [
             Column(
               children: [
-                // ÜST PANEL
+                // --- ÜST PANEL ---
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: const BoxDecoration(
@@ -88,8 +85,16 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                         children: [
                           const Text("KİTAPÇI SİMÜLASYONU", 
                             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.brown)),
-                          Text(gameState.isShopOpen ? "🟢 AÇIK" : "🔴 KAPALI", 
-                            style: const TextStyle(fontSize: 10)),
+                          Row(
+                            children: [
+                              Text(gameState.isShopOpen ? "🟢 AÇIK" : "🔴 KAPALI", 
+                                style: const TextStyle(fontSize: 10)),
+                              const SizedBox(width: 10),
+                              // PARA GÖSTERGESİ (Yeni Eklendi)
+                              Text("💰 ${gameState.totalBalance} TL", 
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                            ],
+                          ),
                         ],
                       ),
                       Text(timeStr, 
@@ -98,7 +103,7 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                   ),
                 ),
 
-                // ANA OYUN ALANI
+                // --- ANA OYUN ALANI ---
                 Expanded(
                   flex: 4,
                   child: Stack(
@@ -113,7 +118,6 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                             children: [
                               // KATMAN: Karakter Kartları Izgarası
                               GridView.builder(
-                                // GÜNCELLEME: Üstten boşluk (top: 80) eklendi
                                 padding: const EdgeInsets.fromLTRB(45, 80, 45, 20),
                                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: 2, 
@@ -133,7 +137,7 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                                 },
                               ),
                               
-                              // KATMAN: Sosyal Çizgiler (Otomatik olarak yeni koordinatları takip eder)
+                              // KATMAN: Sosyal Çizgiler
                               IgnorePointer(
                                 child: FutureBuilder(
                                   future: Future.delayed(Duration.zero),
@@ -173,7 +177,7 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                   ),
                 ),
 
-                // ALT MENÜ
+                // --- ALT MENÜ (Dinamik Eşya Listesi) ---
                 Container(
                   height: 120,
                   decoration: BoxDecoration(
@@ -183,8 +187,25 @@ class _GameBoardState extends ConsumerState<GameBoard> {
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemCount: menuItems.length,
-                    itemBuilder: (context, index) => ItemCard(item: menuItems[index]),
+                    itemCount: allActivityItems.length, // data/activity_items_data.dart içindeki tüm eşyalar
+                    itemBuilder: (context, index) {
+                      final activity = allActivityItems[index];
+                      
+                      // Eşya satın alınmış mı kontrol et
+                      final bool isUnlocked = gameState.unlockedActivityItems.contains(activity.type);
+                      
+                      // Gösterilecek GameItem objesini oluştur
+                      final displayItem = GameItem(
+                        id: 'item_${activity.type.name}',
+                        name: activity.name,
+                        type: activity.type,
+                      );
+
+                      return ItemCard(
+                        item: displayItem, 
+                        isLocked: !isUnlocked, // Satın alınmamışsa kilitli olarak gönder
+                      );
+                    },
                   ),
                 ),
               ],

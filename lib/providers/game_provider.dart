@@ -8,6 +8,7 @@ import '../models/character.dart';
 import '../models/game_item.dart';
 import '../models/shop_models.dart';
 import '../data/character_presets.dart';
+import '../data/activity_items_data.dart'; // Aktivite veri listesi
 
 // --- OYUNUN TÜM DURUMUNU TAŞIYAN ANA SINIF ---
 class GameStateData {
@@ -18,6 +19,7 @@ class GameStateData {
   final int totalBalance;
   final int dayCount;
   final bool showDaySummary;
+  final List<ItemType> unlockedActivityItems; // Satın alınan eşyaların listesi
 
   final List<SeatSlot> terraceSlots;
   final List<SeatSlot> bigTableSlots;
@@ -31,6 +33,7 @@ class GameStateData {
     this.dayCount = 1,
     this.dailyRevenue = 0,
     this.showDaySummary = false,
+    this.unlockedActivityItems = const [],
     required this.terraceSlots,
     required this.bigTableSlots,
     required this.salonSlots,
@@ -44,6 +47,7 @@ class GameStateData {
     int? dailyRevenue,
     int? dayCount,
     bool? showDaySummary,
+    List<ItemType>? unlockedActivityItems,
     List<SeatSlot>? terraceSlots,
     List<SeatSlot>? bigTableSlots,
     List<SeatSlot>? salonSlots,
@@ -56,6 +60,7 @@ class GameStateData {
       totalBalance: totalBalance ?? this.totalBalance,
       dayCount: dayCount ?? this.dayCount,
       showDaySummary: showDaySummary ?? this.showDaySummary,
+      unlockedActivityItems: unlockedActivityItems ?? this.unlockedActivityItems,
       terraceSlots: terraceSlots ?? this.terraceSlots,
       bigTableSlots: bigTableSlots ?? this.bigTableSlots,
       salonSlots: salonSlots ?? this.salonSlots,
@@ -83,18 +88,42 @@ class GameNotifier extends Notifier<GameStateData> {
       );
     }).toList();
 
+    // Başlangıçta ücretsiz olan eşyaların (Kitap, Laptop vb.) listesini oluştur
+    final initialUnlocked = allActivityItems
+        .where((item) => item.isInitialUnlocked)
+        .map((item) => item.type)
+        .toList();
+
     final initialState = GameStateData(
       gameTime: DateTime(2025, 1, 1, 9, 30),
       isShopOpen: false,
       dayCount: 1,
       characters: allInitialCharacters,
+      unlockedActivityItems: initialUnlocked,
       terraceSlots: List.generate(13, (i) => SeatSlot(id: i, locationName: "Teras ${i+1}", type: SeatType.terrace)),
       bigTableSlots: List.generate(5, (i) => SeatSlot(id: 100+i, locationName: "Büyük Masa ${i+1}", type: SeatType.bigTable)),
       salonSlots: List.generate(7, (i) => SeatSlot(id: 200+i, locationName: "Salon ${i+1}", type: SeatType.regularTable)),
     );
 
+    // Kayıtlı verileri yükle
     Future.microtask(() => _loadAllData());
     return initialState;
+  }
+
+  // --- EŞYA SATIN ALMA VE KAYDETME ---
+  void unlockItem(ActivityItem item) {
+    if (state.totalBalance >= item.price && !state.unlockedActivityItems.contains(item.type)) {
+      final newBalance = state.totalBalance - item.price;
+      final newUnlockedList = [...state.unlockedActivityItems, item.type];
+
+      state = state.copyWith(
+        totalBalance: newBalance,
+        unlockedActivityItems: newUnlockedList,
+      );
+
+      // Satın alma işleminden sonra hemen kalıcı belleğe kaydet
+      _saveAllData();
+    }
   }
 
   void _startTimer() {
@@ -113,14 +142,12 @@ class GameNotifier extends Notifier<GameStateData> {
     List<SeatSlot> bSlots = [...state.bigTableSlots];
     List<SeatSlot> sSlots = [...state.salonSlots];
 
-    // GÜN SONU KONTROLÜ
     if (newTime.hour == 23 && newTime.minute == 0) {
       _saveAllData();
       state = state.copyWith(showDaySummary: true);
       return;
     }
 
-    // --- DÜZELTİLMİŞ BİREYSEL DÜŞÜNCE SİSTEMİ ---
     _handleIndividualThoughts(chars, newTime);
 
     bool isOpen = newTime.hour >= 10 && newTime.hour < 23;
@@ -153,65 +180,88 @@ class GameNotifier extends Notifier<GameStateData> {
     );
   }
 
-  // --- BİREYSEL DÜŞÜNCE YÖNETİMİ (Yeni Mantık) ---
+  // Karakterlere eşya verme mantığı (Gitar, Resim vb. dahil)
+  void giveItemToCharacter(String charId, GameItem item) {
+    List<Character> updated = [...state.characters];
+    int idx = updated.indexWhere((c) => c.id == charId);
+    if (idx == -1) return;
+    
+    Character target = updated[idx];
+    final preset = allPresets.firstWhere((p) => p.name == target.name);
+
+    // Aktivite eşyalarını kontrol et (Gitar, Kitap, Laptop, Resim Seti, Masa Oyunu)
+    final activityItemDataList = allActivityItems.where((a) => a.type == item.type).toList();
+
+    if (activityItemDataList.isNotEmpty) {
+      // Karakter bir işle meşgulse veya sosyalleşiyorsa yeni eşya almasın
+      if (target.activeActivity != null || target.socializingWith != null) return;
+      
+      final activityData = activityItemDataList.first;
+      
+      // ÖZEL TEPKİ KONTROLÜ: Karakterin o eşyaya özel bir yazısı var mı? Yoksa varsayılanı kullan.
+      String activityText = preset.activityTexts[item.type] ?? activityData.defaultActivityText;
+
+      updated[idx] = target.copyWith(
+        activity: activityText,
+        activityFinishTime: state.gameTime.add(Duration(minutes: activityData.durationMinutes)),
+        activeActivity: item.copyWith(orderStatus: OrderStatus.processing),
+        clearThought: true,
+      );
+      state = state.copyWith(characters: updated);
+    } else {
+      // Barista ve içecek mantığı (Kahve vb.)
+      if (target.isBarista && item.orderStatus == OrderStatus.pending && target.activeOrder == null) {
+        updated[idx] = target.copyWith(
+          activeOrder: item.copyWith(orderStatus: OrderStatus.preparing), 
+          activity: "${item.name} hazırlıyor...", 
+          orderFinishTime: state.gameTime.add(const Duration(minutes: 5))
+        );
+        int cIdx = updated.indexWhere((c) => c.id == item.relatedCustomerId);
+        if (cIdx != -1) updated[cIdx] = updated[cIdx].copyWith(activity: "Bekliyor...", activeOrder: item.copyWith(orderStatus: OrderStatus.processing), clearThought: true);
+        state = state.copyWith(characters: updated);
+      } else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
+        updated[idx] = _applyXp(target, 50).copyWith(clearOrder: true, activity: "Kahvesini içiyor ☕", lastOrderTime: state.gameTime, happiness: (target.happiness + 0.1).clamp(0.0, 1.0), clearThought: true);
+        int bIdx = updated.indexWhere((c) => c.isBarista);
+        if (bIdx != -1) updated[bIdx] = updated[bIdx].copyWith(clearOrder: true, activity: "Sipariş Bekliyor");
+        state = state.copyWith(characters: updated, totalBalance: state.totalBalance + 60, dailyRevenue: state.dailyRevenue + 60);
+      }
+    }
+  }
+
+  // --- YARDIMCI AI VE SİSTEM METOTLARI ---
+
   void _handleIndividualThoughts(List<Character> chars, DateTime now) {
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
       if (!c.isPresent) continue;
-
-      // 1. Düşünceyi Temizleme (Bireysel: Çıktıktan 20 dakika sonra)
       if (c.activeThought != null && c.lastThoughtTime != null) {
         if (now.difference(c.lastThoughtTime!).inMinutes >= 20) {
           chars[i] = chars[i].copyWith(clearThought: true);
         }
       }
-
-      // 2. Düşünce Tetikleme (Bireysel: Gelişinden veya son düşüncesinden 2 saat sonra)
-      // Karakterin döngüsünü başlatmak için referans zamanı (Ya geliş zamanı ya da en son check zamanı)
       DateTime referenceTime = c.lastThoughtCheckTime ?? c.arrivalTime ?? now;
-      
       if (now.difference(referenceTime).inMinutes >= 120) {
-        // Kontrol zamanını şimdiye çekiyoruz (ihtimal tutsa da tutmasa da 2 saat sonra tekrar baksın)
         chars[i] = chars[i].copyWith(lastThoughtCheckTime: now);
-
-        // %10 İHTİMAL KONTROLÜ
-        if (_rng.nextInt(100) < 100) {
+        if (_rng.nextInt(100) < 10) {
           final preset = allPresets.firstWhere((p) => p.name == c.name);
           if (preset.thoughts.isNotEmpty) {
             final randomThought = preset.thoughts[_rng.nextInt(preset.thoughts.length)];
-            chars[i] = chars[i].copyWith(
-              activeThought: randomThought,
-              lastThoughtTime: now, // Düşüncenin ekranda belirdiği an
-            );
+            chars[i] = chars[i].copyWith(activeThought: randomThought, lastThoughtTime: now);
           }
         }
       }
     }
   }
 
-  // --- ANA OYUN METOTLARI ---
-
   void startNextDay() {
     List<Character> chars = [...state.characters];
     List<SeatSlot> tSlots = [...state.terraceSlots];
     List<SeatSlot> bSlots = [...state.bigTableSlots];
     List<SeatSlot> sSlots = [...state.salonSlots];
-
     DateTime nextDay = DateTime(state.gameTime.year, state.gameTime.month, state.gameTime.day)
         .add(const Duration(days: 1, hours: 9, minutes: 30));
-
     _clearShopForNextDay(chars, tSlots, bSlots, sSlots);
-
-    state = state.copyWith(
-      gameTime: nextDay,
-      dayCount: state.dayCount + 1,
-      dailyRevenue: 0,
-      showDaySummary: false,
-      characters: chars,
-      terraceSlots: tSlots,
-      bigTableSlots: bSlots,
-      salonSlots: sSlots,
-    );
+    state = state.copyWith(gameTime: nextDay, dayCount: state.dayCount + 1, dailyRevenue: 0, showDaySummary: false, characters: chars, terraceSlots: tSlots, bigTableSlots: bSlots, salonSlots: sSlots);
   }
 
   void fulfillGenericOrder(int slotId, GameItem item) {
@@ -228,42 +278,7 @@ class GameNotifier extends Notifier<GameStateData> {
       if (item.name.toLowerCase().contains(customer.lookingFor.toLowerCase()) || customer.lookingFor == "") {
         final updatedCustomer = customer.copyWith(state: ActivityState.consuming);
         _updateSlotInList(slotId, updatedCustomer, t, b, s);
-        state = state.copyWith(
-          dailyRevenue: state.dailyRevenue + 50,
-          totalBalance: state.totalBalance + 50,
-          terraceSlots: t, bigTableSlots: b, salonSlots: s,
-        );
-      }
-    }
-  }
-
-  void giveItemToCharacter(String charId, GameItem item) {
-    List<Character> updated = [...state.characters];
-    int idx = updated.indexWhere((c) => c.id == charId);
-    if (idx == -1) return;
-    Character target = updated[idx];
-    final preset = allPresets.firstWhere((p) => p.name == target.name);
-
-    if (item.type == ItemType.laptop || item.type == ItemType.book) {
-      if (target.activeActivity != null) return;
-      updated[idx] = target.copyWith(
-        activity: preset.activityTexts[item.type] ?? "Meşgul...",
-        activityFinishTime: state.gameTime.add(Duration(minutes: item.type == ItemType.laptop ? 60 : 30)),
-        activeActivity: item.copyWith(orderStatus: OrderStatus.processing),
-        clearThought: true, // Bir işe başlayınca düşünceyi sil
-      );
-      state = state.copyWith(characters: updated);
-    } else {
-      if (target.isBarista && item.orderStatus == OrderStatus.pending && target.activeOrder == null) {
-        updated[idx] = target.copyWith(activeOrder: item.copyWith(orderStatus: OrderStatus.preparing), activity: "${item.name} hazırlıyor...", orderFinishTime: state.gameTime.add(const Duration(minutes: 5)));
-        int cIdx = updated.indexWhere((c) => c.id == item.relatedCustomerId);
-        if (cIdx != -1) updated[cIdx] = updated[cIdx].copyWith(activity: "Bekliyor...", activeOrder: item.copyWith(orderStatus: OrderStatus.processing), clearThought: true);
-        state = state.copyWith(characters: updated);
-      } else if (item.relatedCustomerId == target.id && item.orderStatus == OrderStatus.ready) {
-        updated[idx] = _applyXp(target, 50).copyWith(clearOrder: true, activity: "Kahvesini içiyor ☕", lastOrderTime: state.gameTime, happiness: (target.happiness + 0.1).clamp(0.0, 1.0), clearThought: true);
-        int bIdx = updated.indexWhere((c) => c.isBarista);
-        if (bIdx != -1) updated[bIdx] = updated[bIdx].copyWith(clearOrder: true, activity: "Sipariş Bekliyor");
-        state = state.copyWith(characters: updated, totalBalance: state.totalBalance + 60, dailyRevenue: state.dailyRevenue + 60);
+        state = state.copyWith(dailyRevenue: state.dailyRevenue + 50, totalBalance: state.totalBalance + 50, terraceSlots: t, bigTableSlots: b, salonSlots: s);
       }
     }
   }
@@ -280,8 +295,6 @@ class GameNotifier extends Notifier<GameStateData> {
       state = state.copyWith(characters: updated);
     }
   }
-
-  // --- YARDIMCI AI VE SİSTEM METOTLARI ---
 
   void _spawnGenericCustomer(List<SeatSlot> t, List<SeatSlot> b, List<SeatSlot> s, DateTime now) {
     List<SeatSlot> allEmpty = [...t, ...b, ...s].where((slot) => slot.customer == null).toList();
@@ -347,46 +360,24 @@ class GameNotifier extends Notifier<GameStateData> {
     }
   }
 
- void _handleProcessCompletions(List<Character> chars, DateTime now) {
+  void _handleProcessCompletions(List<Character> chars, DateTime now) {
     for (int i = 0; i < chars.length; i++) {
       Character c = chars[i];
-      
-      // 1. Barista Sipariş Tamamlama
       if (c.orderFinishTime != null && now.isAfter(c.orderFinishTime!)) {
         if (c.isBarista && c.activeOrder?.orderStatus == OrderStatus.preparing) {
-          chars[i] = _applyXp(c, 40).copyWith(
-            activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready),
-            activity: "Servis Hazır! 🔔",
-            orderFinishTime: null,
-            clearOrderFinishTime: true,
-          );
+          chars[i] = _applyXp(c, 40).copyWith(activeOrder: c.activeOrder!.copyWith(orderStatus: OrderStatus.ready), activity: "Servis Hazır! 🔔", orderFinishTime: null, clearOrderFinishTime: true);
         }
       }
-
-      // 2. Aktivite veya Sosyalleşme Tamamlama
       if (c.activityFinishTime != null && now.isAfter(c.activityFinishTime!)) {
         if (c.socializingWith != null) {
           _finishSocializing(chars, i);
         } else if (c.activeActivity != null) {
           final preset = allPresets.firstWhere((p) => p.name == c.name);
-          
-          // GÜVENLİ VERİ ÇEKME:
-          // Eğer ItemType multipliers içinde yoksa boş map kullan.
           final m = preset.multipliers[c.activeActivity!.type] ?? {};
-
-          // Her bir değeri tek tek null kontrolünden geçirerek çekiyoruz (Fallback/Varsayılan değerlerle)
           final num xpGain = m['xp'] ?? 30;
           final num happinessGain = m['happiness'] ?? 0.05;
           final num successGain = m['success'] ?? 0.02;
-
-          chars[i] = _applyXp(c, xpGain.toInt()).copyWith(
-            activity: "İşini bitirdi ✅",
-            happiness: (c.happiness + happinessGain.toDouble()).clamp(0.0, 1.0),
-            success: (c.success + successGain.toDouble()).clamp(0.0, 1.0),
-            clearActivity: true,
-            activityFinishTime: null,
-            clearActivityFinishTime: true,
-          );
+          chars[i] = _applyXp(c, xpGain.toInt()).copyWith(activity: "İşini bitirdi ✅", happiness: (c.happiness + happinessGain.toDouble()).clamp(0.0, 1.0), success: (c.success + successGain.toDouble()).clamp(0.0, 1.0), clearActivity: true, activityFinishTime: null, clearActivityFinishTime: true);
         }
       }
     }
@@ -437,11 +428,15 @@ class GameNotifier extends Notifier<GameStateData> {
     _clearGenericCustomers(t, b, s);
   }
 
+  // --- KAYIT VE YÜKLEME SİSTEMİ (KALICI HAFIZA) ---
+
   Future<void> _saveAllData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('saved_character_progress', jsonEncode(state.characters.map((c) => c.toJson()).toList()));
     await prefs.setInt('game_day_count', state.dayCount);
     await prefs.setInt('total_balance', state.totalBalance);
+    final unlockedStringList = state.unlockedActivityItems.map((e) => e.toString()).toList();
+    await prefs.setString('unlocked_activity_items', jsonEncode(unlockedStringList));
   }
 
   Future<void> _loadAllData() async {
@@ -449,6 +444,7 @@ class GameNotifier extends Notifier<GameStateData> {
     final savedCharsJson = prefs.getString('saved_character_progress');
     final savedBalance = prefs.getInt('total_balance') ?? 0;
     final savedDay = prefs.getInt('game_day_count') ?? 1;
+    final savedUnlockedJson = prefs.getString('unlocked_activity_items');
 
     List<Character> updatedChars = [...state.characters];
     if (savedCharsJson != null) {
@@ -468,7 +464,19 @@ class GameNotifier extends Notifier<GameStateData> {
         }
       }
     }
-    state = state.copyWith(dayCount: savedDay, characters: updatedChars, totalBalance: savedBalance);
+
+    List<ItemType> loadedUnlocked = [...state.unlockedActivityItems];
+    if (savedUnlockedJson != null) {
+      final List<dynamic> decoded = jsonDecode(savedUnlockedJson);
+      loadedUnlocked = decoded.map((s) => ItemType.values.firstWhere((e) => e.toString() == s)).toList();
+    }
+
+    state = state.copyWith(
+      dayCount: savedDay, 
+      characters: updatedChars, 
+      totalBalance: savedBalance,
+      unlockedActivityItems: loadedUnlocked,
+    );
   }
 }
 

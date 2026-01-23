@@ -1,6 +1,7 @@
 enum ItemType { 
   filterCoffee, latte, espresso, herbalTea, 
-  laptop, book 
+  laptop, book, 
+  guitar, paintingKit, boardGame 
 }
 
 enum OrderStatus { 
@@ -16,6 +17,7 @@ class GameItem {
   final ItemType type;
   final int xpValue;
   final String? relatedCustomerId;
+  final int price;
   final OrderStatus? orderStatus;
 
   GameItem({
@@ -25,6 +27,7 @@ class GameItem {
     this.xpValue = 10,
     this.relatedCustomerId,
     this.orderStatus,
+    this.price = 0,
   });
 
   // Hata Çözümü: copyWith metodu eklendi
@@ -54,6 +57,10 @@ class GameItem {
       case ItemType.herbalTea: return "🍵";
       case ItemType.laptop: return "💻";
       case ItemType.book: return "📖";
+      case ItemType.guitar: return "🎸";
+      case ItemType.paintingKit: return "🎨";
+      case ItemType.boardGame: return "🎲";
+    // ... diğerleri
       default: return "📦";
     }
   }

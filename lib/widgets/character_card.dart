@@ -1,9 +1,11 @@
+// lib/widgets/character_card.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/character.dart';
 import '../models/game_item.dart';
 import '../providers/game_provider.dart';
 import '../screens/character_detail.dart';
+import '../data/activity_items_data.dart'; // Aktivite listesini kullanmak için eklendi
 
 class CharacterCard extends ConsumerWidget {
   final Character character;
@@ -32,17 +34,26 @@ class CharacterCard extends ConsumerWidget {
           onWillAccept: (incomingItem) {
             if (!character.isPresent || incomingItem == null) return false;
             
+            // 1. Barista Sipariş Hazırlama Kontrolü
             if (character.isBarista) {
               if (incomingItem.orderStatus == OrderStatus.pending) {
                 return character.activeOrder == null;
               }
             }
+
+            // 2. Müşteri Hazır Siparişi Teslim Alma Kontrolü
             if (!character.isBarista && incomingItem.relatedCustomerId == character.id) {
               if (incomingItem.orderStatus == OrderStatus.ready) return true;
             }
-            if (incomingItem.type == ItemType.laptop || incomingItem.type == ItemType.book) {
-              return character.activeActivity == null;
-            }
+
+            // 3. --- GÜNCELLENEN KISIM: TÜM AKTİVİTE EŞYALARI ---
+            // Sürüklenen eşya bir aktivite eşyası mı? (Gitar, Laptop, Kitap, Resim Seti vb.)
+           final bool isActivityItem = allActivityItems.any((a) => a.type == incomingItem.type);
+            
+            if (isActivityItem) {
+      return character.activeActivity == null && character.socializingWith == null;
+    }
+            
             return false;
           },
           onAccept: (item) {
@@ -179,20 +190,17 @@ class CharacterCard extends ConsumerWidget {
     );
   }
 
-  // --- RENK MANTIĞI GÜNCELLENMİŞ BULONCUK ---
+  // --- BULONCUK TASARIMI ---
   Widget _buildBubble(GameItem item, {bool isDragging = false}) {
     Color bubbleColor = Colors.white;
     
-    // 1. SİPARİŞ ALINMAMIŞ (BEKLİYOR) -> SARI
     if (item.orderStatus == OrderStatus.pending) {
       bubbleColor = Colors.yellow[100]!;
     } 
-    // 2. HAZIRLANIYOR VEYA AKTİVİTE YAPILIYOR -> MAVİ
     else if (item.orderStatus == OrderStatus.preparing || 
              item.orderStatus == OrderStatus.processing) {
       bubbleColor = Colors.blue[100]!;
     } 
-    // 3. TAMAMLANDI (HAZIR) -> YEŞİL
     else if (item.orderStatus == OrderStatus.ready) {
       bubbleColor = Colors.green[100]!;
     }
